@@ -1,0 +1,40 @@
+{
+  "name": "trae-pet-bridge",
+  "displayName": "Trae Pet Bridge",
+  "description": "把 Trae 的编码事件（输入、切换文件、任务、调试、诊断错误）推送给桌面宠物",
+  "version": "0.1.0",
+  "publisher": "remielle",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "trae-pet-bridge.toggle",
+        "title": "桌面宠物桥接：启用 / 暂停"
+      }
+    ],
+    "configuration": {
+      "title": "Trae Pet Bridge",
+      "properties": {
+        "traePetBridge.autoLaunch": {
+          "type": "boolean",
+          "default": true,
+          "description": "Trae 启动时自动启动桌面宠物"
+        },
+        "traePetBridge.petPath": {
+          "type": "string",
+          "default": "",
+          "description": "宠物可执行文件路径或宠物项目目录（含 main.js 和 node_modules/electron 的目录）。留空则自动发现。"
+        }
+      }
+    }
+  }
+}

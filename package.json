@@ -1,0 +1,34 @@
+{
+  "name": "clawd-desktop-pet",
+  "version": "0.5.4",
+  "description": "蕾米埃尔 · Clawd 桌面宠物（Electron 运行时）",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win portable"
+  },
+  "build": {
+    "appId": "com.remielle.clawd-pet",
+    "productName": "ClawdPet",
+    "win": {
+      "target": ["portable"]
+    },
+    "files": [
+      "main.js",
+      "pet.js",
+      "preload.js",
+      "index.html",
+      "style.css",
+      "package.json",
+      "Remielle_Dan-clawd-theme-v0.5.4/**/*"
+    ],
+    "portable": {
+      "artifactName": "ClawdPet.exe"
+    }
+  },
+  "devDependencies": {
+    "electron": "^37.2.0",
+    "electron-builder": "^25.0.0"
+  },
+  "allowScripts": {}
+}
