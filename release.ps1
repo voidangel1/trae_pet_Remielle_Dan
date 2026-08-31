@@ -25,10 +25,11 @@ foreach ($f in $petFiles) {
 }
 Write-Host "  → 宠物源码 ($($petFiles.Count) 个文件)" -ForegroundColor Green
 
-# 主题资源
+# 主题资源（复制内容而非目录本身，避免目标已存在时形成嵌套）
 $themeSrc = Join-Path $projectDir "Remielle_Dan-clawd-theme-v0.5.4"
 $themeDst = Join-Path $stagingDir "Remielle_Dan-clawd-theme-v0.5.4"
-Copy-Item $themeSrc $themeDst -Recurse -Force
+New-Item -ItemType Directory -Force -Path $themeDst | Out-Null
+Copy-Item "$themeSrc\*" $themeDst -Recurse -Force
 Write-Host "  → 主题资源" -ForegroundColor Green
 
 # ============================================================
@@ -37,7 +38,8 @@ Write-Host "  → 主题资源" -ForegroundColor Green
 Write-Host "`n[2/5] 复制桥接扩展..." -ForegroundColor Yellow
 $extSrc = Join-Path $projectDir "trae-pet-bridge"
 $extDst = Join-Path $stagingDir "trae-pet-bridge"
-Copy-Item $extSrc $extDst -Recurse -Force
+New-Item -ItemType Directory -Force -Path $extDst | Out-Null
+Copy-Item "$extSrc\*" $extDst -Recurse -Force
 Write-Host "  → trae-pet-bridge" -ForegroundColor Green
 
 # ============================================================
@@ -61,9 +63,8 @@ Write-Host "`n[5/5] 生成压缩包..." -ForegroundColor Yellow
 $zipPath = Join-Path $releaseDir "$releaseName.zip"
 if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
 
-# 用 .NET 压缩（支持大文件）
-Add-Type -AssemblyName System.IO.Compression.FileSystem
-[System.IO.Compression.ZipFile]::CreateFromDirectory($stagingDir, $zipPath)
+# 用 PowerShell 内置压缩（无需加载 .NET 程序集，兼容受限环境）
+Compress-Archive -Path "$stagingDir\*" -DestinationPath $zipPath -Force
 
 $zipSize = [math]::Round((Get-Item $zipPath).Length / 1MB, 1)
 Write-Host "  → $zipPath ($zipSize MB)" -ForegroundColor Green
