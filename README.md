@@ -1,7 +1,6 @@
 # ClawdPet — 蕾米埃尔 · Clawd 桌面宠物（Trae IDE）
 
 本项目基于 `https://github.com/6666ccc/codex_pet_Remielle_Dan` 进行二次开发。
-现在版本号为 1.1。
 
 一个运行在 Windows 桌面上的 Electron 桌宠，通过本地 HTTP 桥（端口 27315）接收 Trae IDE 扩展与 Hooks 推送的事件，实时反映 Agent 的工作状态（空闲 / 注意 / 思考 / 编辑 / 通知 / 错误）。
 
