@@ -1,7 +1,7 @@
 # ClawdPet — 蕾米埃尔 · Clawd 桌面宠物（Trae IDE）
 
 本项目基于 `https://github.com/6666ccc/codex_pet_Remielle_Dan` 进行二次开发。
-现在版本号为 1.0。
+现在版本号为 1.1。
 
 一个运行在 Windows 桌面上的 Electron 桌宠，通过本地 HTTP 桥（端口 27315）接收 Trae IDE 扩展与 Hooks 推送的事件，实时反映 Agent 的工作状态（空闲 / 注意 / 思考 / 编辑 / 通知 / 错误）。
 
@@ -46,6 +46,13 @@ hook-handler.js   Trae Hooks 处理器
 trae-pet-bridge/  Trae 扩展（转发事件到本地桥）
 Remielle_Dan-clawd-theme-v0.5.4/  主题资源（GIF + theme.json）
 ```
+
+## 已知问题修复（v1.1）
+
+- **修复 Trae 1.107+ 更新后状态全部失效的问题**：新版 Trae 要求 Hooks 必须在「设置 → Hooks」中手动启用，且执行模式默认为沙箱（会静默跳过 Hook 命令）。安装后需按 INSTALL.md 手动启用一次。
+- Hooks 命令改用完整路径，不再使用 8.3 短路径（Trae 升级自带 Node 后短路径会失效导致 Hooks 被静默跳过）。
+- Pet Bridge 扩展不再在 Trae 启动时自动弹出日志面板。
+- install.ps1 会自动清理旧版本扩展目录，避免新旧共存重复加载。
 
 ## 已知问题修复（v1.0）
 

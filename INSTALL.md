@@ -37,6 +37,16 @@ D:\Apps\ClawdPet
 - 配置桌面宠物自动启动。
 - 将宠物路径设置为当前解压目录。
 
+### 重要：手动启用 Hooks（Trae 1.107 及以上版本必须）
+
+新版 Trae 出于安全考虑，**不会自动执行 Hooks 配置文件中的命令**。安装完成后必须手动启用一次，否则宠物不会有任何状态变化：
+
+1. 打开 Trae **设置 → Hooks**。
+2. 在「已配置的 Hooks」→ **全局** 下，打开开关，并在弹出的安全警示中点击「启用」。
+3. 在「执行模式」中，将「沙箱内运行」切换为 **「本地自动运行」**（沙箱模式下 Hook 命令可能被静默跳过）。
+
+只需要设置一次，之后重启 Trae 均会保持生效。
+
 如果右键菜单中没有“使用 PowerShell 运行”，可以在该文件夹空白处右键，选择“在终端中打开”，然后执行：
 
 ```powershell
@@ -141,7 +151,12 @@ Trae 国际版：
 %USERPROFILE%\.trae\hooks.json
 ```
 
-然后重新运行 `install.ps1`，再重启 Trae。
+然后确认 Hooks 已在 Trae 中启用（Trae 1.107+ 必须手动启用，见「二、一键安装」中的说明）：
+
+1. 设置 → Hooks → 已配置的 Hooks → 全局 → 开关已打开。
+2. 执行模式为「本地自动运行」。
+
+最后重新运行 `install.ps1`，再重启 Trae。
 
 ### 3. PowerShell 阻止脚本运行
 
@@ -184,13 +199,13 @@ traePetBridge.autoLaunch
 Trae CN：
 
 ```text
-%USERPROFILE%\.trae-cn\extensions\remielle.trae-pet-bridge-0.1.0
+%USERPROFILE%\.trae-cn\extensions\remielle.trae-pet-bridge-0.2.0
 ```
 
 Trae 国际版：
 
 ```text
-%USERPROFILE%\.trae\extensions\remielle.trae-pet-bridge-0.1.0
+%USERPROFILE%\.trae\extensions\remielle.trae-pet-bridge-0.2.0
 ```
 
 3. 删除对应的全局 Hooks 文件中的 ClawdPet 配置。

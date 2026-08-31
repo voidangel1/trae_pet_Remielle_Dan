@@ -1,10 +1,10 @@
-﻿# ClawdPet 发布打包脚本
+# ClawdPet 发布打包脚本
 # 用法: 在项目根目录运行 .\release.ps1
 # 会生成 release\ClawdPet-v0.5.4.zip，可直接发给他人
 $ErrorActionPreference = "Stop"
 $projectDir = $PSScriptRoot
 $releaseDir = Join-Path $projectDir "release"
-$releaseName = "ClawdPet-v0.5.4"
+$releaseName = "ClawdPet-v1.1"
 $stagingDir = Join-Path $releaseDir $releaseName
 
 Write-Host "=== ClawdPet 发布打包 ===" -ForegroundColor Cyan

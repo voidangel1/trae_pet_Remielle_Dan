@@ -151,7 +151,7 @@ function launchPet() {
 
 function activate(context) {
   out = vscode.window.createOutputChannel('Pet Bridge');
-  out.show();
+  // 不自动弹出输出面板，仅静默记录日志（可在输出面板手动查看）
   log('=== Pet Bridge 扩展已激活 ===');
 
   statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);

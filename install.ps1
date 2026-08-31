@@ -1,4 +1,4 @@
-﻿# ClawdPet 安装脚本 — 自动配置 Trae 扩展和 Hooks
+# ClawdPet 安装脚本 — 自动配置 Trae 扩展和 Hooks
 # 用法: 解压后右键此文件 -> "使用 PowerShell 运行"
 $ErrorActionPreference = "Stop"
 $installDir = $PSScriptRoot
@@ -38,7 +38,15 @@ if (-not $traeExtRoot) {
 # 2. 安装桥接扩展
 # ============================================================
 Write-Host "`n[1/5] 安装 Trae 桥接扩展..." -ForegroundColor Yellow
-$extDir = Join-Path $traeExtRoot "remielle.trae-pet-bridge-0.1.0"
+$extDir = Join-Path $traeExtRoot "remielle.trae-pet-bridge-0.2.0"
+
+# 清理旧版本扩展目录，避免新旧共存被 Trae 重复加载
+Get-ChildItem $traeExtRoot -Directory -Filter "remielle.trae-pet-bridge-*" -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -ne "remielle.trae-pet-bridge-0.2.0" } |
+    ForEach-Object {
+        Write-Host "  清理旧版扩展: $($_.Name)" -ForegroundColor Gray
+        Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+    }
 New-Item -ItemType Directory -Force -Path $extDir | Out-Null
 Copy-Item "$installDir\trae-pet-bridge\*" -Destination $extDir -Recurse -Force
 Write-Host "  -> $extDir" -ForegroundColor Green
@@ -118,10 +126,13 @@ if (-not $nodePath) {
     $nodePath = "node"
 }
 
-$fso = New-Object -ComObject Scripting.FileSystemObject
-try { $nodeShort = $fso.GetFile($nodePath).ShortPath } catch { $nodeShort = $nodePath }
+# 注意：必须写入完整路径，禁止使用 8.3 短路径（如 TRAE-C~1）。
+# Trae 升级自带 Node 版本后短路径会失效，Hooks 将被静默跳过。
+# 路径含空格时加引号，避免 shell 解析错误。
 $hookScript = "$installDir\hook-handler.js" -replace '\\', '/'
-$cmd = "$nodeShort $hookScript"
+$nodeCmd = if ($nodePath -match ' ') { '"{0}"' -f $nodePath } else { $nodePath }
+$scriptCmd = if ($hookScript -match ' ') { '"{0}"' -f $hookScript } else { $hookScript }
+$cmd = "$nodeCmd $scriptCmd"
 
 $hooksConfig = @{
     version = 1
@@ -169,7 +180,11 @@ Write-Host ""
 Write-Host "下一步:" -ForegroundColor Cyan
 Write-Host "  1. 重启 Trae IDE" -ForegroundColor Cyan
 Write-Host "  2. 宠物会自动启动并出现在屏幕右下角" -ForegroundColor Cyan
-Write-Host "  3. 向 Agent 发送消息，宠物会自动切换状态" -ForegroundColor Cyan
+Write-Host "  3. 手动启用 Hooks（必须！Trae 1.107+ 未启用时 Hooks 完全不会执行）:" -ForegroundColor Yellow
+Write-Host "     - 设置 → Hooks → 已配置的 Hooks → 全局 → 打开开关，在安全警示中确认「启用」" -ForegroundColor Yellow
+Write-Host "     - 设置 → Hooks → 执行模式 → 切换为「本地自动运行」" -ForegroundColor Yellow
+Write-Host "     （默认的沙箱模式下 Hook 命令可能被静默跳过，宠物不会有任何反应）" -ForegroundColor DarkYellow
+Write-Host "  4. 向 Agent 发送消息，宠物会自动切换状态" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "状态说明:" -ForegroundColor Cyan
 Write-Host "  idle         空闲" -ForegroundColor Cyan
