@@ -14,6 +14,10 @@ let notificationTimer = null;
 // Agent 是否活跃（thinking/editing 期间为 true，优先级高于编辑器 attention）
 let agentActive = false;
 const PERSISTENT_AGENT_STATES = ['thinking', 'editing'];
+// error 展示截止时间：此期间到达的 notification 视为 Trae 异常打断后的系统通知，忽略
+let errorShownUntil = 0;
+// 最近一次状态事件时间，用于检测「工具已提出但长时间无后续事件」的等待场景
+let lastEventAt = Date.now();
 
 function play(file) {
   // 追加时间戳强制重新加载，让 GIF 从头播放；加载失败时退回无参数路径兜底
@@ -69,9 +73,29 @@ function scheduleRandomIdle() {
 // 主进程检测到全局光标移动（保留接口）
 window.petAPI.onUserActivity(() => {});
 
+// ---------- 审批 / 提问等待检测 ----------
+// 实测（hook-debug.log）：Trae 在「命令运行审批」「Agent 向用户提问」时不会触发任何
+// Hook 事件（Notification 仅在任务完成/异常打断时触发）。表现为 PreToolUse(editing)
+// 后长时间无任何后续事件。超过 45 秒视为在等待用户操作，切换到 notification 提醒；
+// 后续事件（审批通过 / 用户回答 / 任务结束）到达时会自然接管状态。
+const EDITING_STALL_MS = 45000;
+setInterval(() => {
+  if (agentActive && current === 'editing' && Date.now() - lastEventAt > EDITING_STALL_MS) {
+    console.log('[pet] editing 停滞超时，判定为等待用户审批/回答 → notification');
+    setState('notification'); // 持续显示直到下一个事件，不自动回 idle
+  }
+}, 5000);
+
 // 右键菜单 / Hook / 扩展触发的状态
 window.petAPI.onTriggerState((name) => {
+  // error 展示期间到达的 notification 是 Trae 在异常打断后紧跟的系统通知，
+  // 忽略以免覆盖 error（hook-handler 层已抑制，此处为双保险，防 Hook 状态文件失效）
+  if (name === 'notification' && Date.now() < errorShownUntil) {
+    console.log('[pet] error 展示中，忽略随后的 notification');
+    return;
+  }
   ++stateToken; // 使所有之前的定时器失效，防止旧定时器覆盖新状态
+  lastEventAt = Date.now();
   if (name === 'lock-toggle') {
     dragEnabled = !dragEnabled;
     return;
@@ -84,6 +108,7 @@ window.petAPI.onTriggerState((name) => {
     // Agent 异常：显示 3 秒后回到 idle
     agentActive = true;
     setState('error');
+    errorShownUntil = Date.now() + 3000;
     const token = stateToken;
     setTimeout(() => {
       if (token === stateToken) { agentActive = false; toIdle(); }

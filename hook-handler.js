@@ -5,10 +5,26 @@ const fs = require('fs');
 const path = require('path');
 
 const LOG_FILE = path.join(__dirname, 'hook-debug.log');
+// 最近一次推送的状态（每次 Hook 都是独立进程，需要落盘跨进程共享）
+const STATE_FILE = path.join(__dirname, 'hook-state.json');
 
 function log(msg) {
   const line = `[${new Date().toISOString()}] ${msg}\n`;
   try { fs.appendFileSync(LOG_FILE, line); } catch {}
+}
+
+function readLastPush() {
+  try {
+    return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function writeLastPush(state) {
+  try {
+    fs.writeFileSync(STATE_FILE, JSON.stringify({ state, ts: Date.now() }));
+  } catch {}
 }
 
 function detectError(data, stopReason) {
@@ -32,6 +48,7 @@ function detectError(data, stopReason) {
 }
 
 function pushState(state) {
+  writeLastPush(state);
   const body = JSON.stringify({ state });
   const client = new net.Socket();
   client.connect(27315, '127.0.0.1', () => {
@@ -61,6 +78,10 @@ process.stdin.on('end', () => {
     event = data.hook_event_name || '';
     stopReason = data.stopReason || data.stop_reason || '';
     log(`收到事件: ${event} | stopReason: ${stopReason}`);
+    // Notification / Stop 的 payload 内容对排查状态误判最有价值，截断记录
+    if (event === 'Notification' || event === 'Stop') {
+      log(`payload: ${JSON.stringify(data).substring(0, 1500)}`);
+    }
   } catch {
     log(`JSON 解析失败: ${input.substring(0, 200)}`);
     // 即使解析失败，也尝试从原始文本判断异常并兜底恢复
@@ -78,7 +99,18 @@ process.stdin.on('end', () => {
       case 'UserPromptSubmit': state = 'thinking'; break;
       case 'PreToolUse':       state = 'editing'; break;
       case 'PostToolUse':      state = 'thinking'; break;
-      case 'Notification':     state = detectError(data, stopReason) ? 'error' : 'notification'; break;
+      case 'Notification': {
+        // Stop 判定为 error 后约 300ms，Trae 会紧接着弹「任务已中断」系统通知，
+        // 其 payload 不含错误关键词，会把宠物刚展示的 error 覆盖成 notification。
+        // 15 秒窗口内直接忽略这类通知，保证 error 表情可见。
+        const last = readLastPush();
+        if (last && last.state === 'error' && Date.now() - last.ts < 15000) {
+          log('error 后 15s 内的 Notification，忽略（避免覆盖错误状态）');
+          process.exit(0);
+        }
+        state = detectError(data, stopReason) ? 'error' : 'notification';
+        break;
+      }
       case 'Stop':
         state = detectError(data, stopReason) ? 'error' : 'idle';
         break;

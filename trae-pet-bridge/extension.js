@@ -1,6 +1,6 @@
 const vscode = require('vscode');
 const net = require('net');
-const { spawn, execFile } = require('child_process');
+const { execFile } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
@@ -13,7 +13,7 @@ let statusItem = null;
 let online = false;
 let pingInterval = null;
 let out = null;
-let petProcess = null;
+let petLaunched = false;
 let launchTimer = null;
 
 function log(msg) {
@@ -79,11 +79,17 @@ function markTyping() {
 }
 
 // 自动启动宠物 Electron 进程
+// 关键：扩展宿主（exthost）及其直接 spawn 的子进程全部处于 Trae 的 kill-on-close
+// Job Object 内，宿主所在窗口关闭时会被连坐杀死（实测确认，detached: true 也无法
+// 逃逸）。因此这里必须通过 WMI 的 Win32_Process.Create 让系统服务进程 WmiPrvSE
+// （在 Job 外）创建宠物进程，宠物不继承 Job，窗口关闭后仍存活；其生命周期由
+// 宠物自带的看门狗（--follow-trae）管理，所有 Trae 窗口关闭后自行退出。
 function launchPet() {
   const config = vscode.workspace.getConfiguration('traePetBridge');
   const autoLaunch = config.get('autoLaunch', true);
   if (!autoLaunch) { log('自动启动已禁用，跳过'); return; }
-  if (petProcess) { log('宠物进程已在运行，跳过'); return; }
+  if (petLaunched) { log('本窗口已启动过宠物，跳过'); return; }
+  if (online) { log('宠物已在线，跳过启动'); return; }
 
   let petPath = config.get('petPath', '');
 
@@ -98,54 +104,50 @@ function launchPet() {
     }
   }
 
-  try {
-    if (petPath && fs.existsSync(petPath)) {
-      if (petPath.toLowerCase().endsWith('.exe')) {
-        // 直接调用 Windows 可执行文件，避免 shell/cmd 的路径和退出行为影响 Electron
-        log(`启动宠物 exe: ${petPath}`);
-        petProcess = execFile(petPath, [], {
-          cwd: path.dirname(petPath),
-          windowsHide: true,
-          detached: true,
-          stdio: 'ignore',
-        });
-      } else {
-        // 开发模式：直接调用项目本地 Electron，不经过 portable exe 或 npx
-        const electronPath = path.join(petPath, 'node_modules', 'electron', 'dist', 'electron.exe');
-        if (!fs.existsSync(electronPath)) {
-          log(`未找到项目 Electron: ${electronPath}`);
-          return;
-        }
-        log(`启动宠物开发模式: ${petPath}`);
-        const childEnv = { ...process.env };
-        delete childEnv.ELECTRON_RUN_AS_NODE;
-        delete childEnv.VSCODE_PID;
-        petProcess = execFile(electronPath, ['.'], {
-          cwd: petPath,
-          env: childEnv,
-          windowsHide: true,
-          detached: true,
-          stdio: 'ignore',
-        });
-      }
-      petProcess.on('error', (error) => log(`宠物进程错误: ${error.message}`));
-      petProcess.on('exit', (code) => log(`宠物进程退出: code=${code}`));
+  let cmdLine, cwd;
+  if (petPath && fs.existsSync(petPath)) {
+    if (petPath.toLowerCase().endsWith('.exe')) {
+      cmdLine = `"${petPath}" --follow-trae`;
+      cwd = path.dirname(petPath);
     } else {
-      // 兜底：假设扩展源码同级目录就是宠物项目
-      const projectDir = path.join(__dirname, '..');
-      if (fs.existsSync(path.join(projectDir, 'main.js'))) {
-        log(`自动发现宠物项目: ${projectDir}`);
-        petProcess = spawn('npx', ['electron', '.'], { cwd: projectDir, detached: true, stdio: 'ignore', shell: true });
-      } else {
-        log('未找到宠物路径，请在设置中配置 trae2PetBridge.petPath');
+      // 开发模式：直接调用项目本地 Electron，不经过 portable exe 或 npx
+      const electronPath = path.join(petPath, 'node_modules', 'electron', 'dist', 'electron.exe');
+      if (!fs.existsSync(electronPath)) {
+        log(`未找到项目 Electron: ${electronPath}`);
         return;
       }
+      cmdLine = `"${electronPath}" . --follow-trae`;
+      cwd = petPath;
     }
-    petProcess.unref();
-    log('宠物进程已启动');
+  } else {
+    // 兜底：假设扩展源码同级目录就是宠物项目
+    const projectDir = path.join(__dirname, '..');
+    const electronPath = path.join(projectDir, 'node_modules', 'electron', 'dist', 'electron.exe');
+    if (fs.existsSync(path.join(projectDir, 'main.js')) && fs.existsSync(electronPath)) {
+      log(`自动发现宠物项目: ${projectDir}`);
+      cmdLine = `"${electronPath}" . --follow-trae`;
+      cwd = projectDir;
+    } else {
+      log('未找到宠物路径，请在设置中配置 traePetBridge.petPath');
+      return;
+    }
+  }
+
+  try {
+    // WMI Create 无法传递环境变量，改用 --follow-trae 命令行参数开启看门狗
+    const psScript =
+      `Invoke-CimMethod -ClassName Win32_Process -MethodName Create ` +
+      `-Arguments @{CommandLine='${cmdLine.replace(/'/g, "''")}';CurrentDirectory='${cwd.replace(/'/g, "''")}'}`;
+    // 用 -EncodedCommand 传递脚本，避开多层引号转义问题
+    const encoded = Buffer.from(psScript, 'utf16le').toString('base64');
+    log(`通过 WMI 启动宠物: ${cmdLine}`);
+    execFile('powershell.exe', ['-NoProfile', '-EncodedCommand', encoded], { windowsHide: true, timeout: 15000 }, (err) => {
+      if (err) log(`WMI 启动器错误: ${err.message}`);
+    });
+    petLaunched = true;
+    log('WMI 启动命令已发出');
   } catch (e) {
     log(`启动宠物失败: ${e.message}`);
-    petProcess = null;
   }
 }
 
@@ -192,12 +194,7 @@ function activate(context) {
 function stopPet() {
   if (launchTimer) clearTimeout(launchTimer);
   if (pingInterval) clearInterval(pingInterval);
-  if (!petProcess || !petProcess.pid) return;
-
-  const pid = petProcess.pid;
-  log(`Trae 已关闭，正在关闭宠物进程: ${pid}`);
-  execFile('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true }, () => {});
-  petProcess = null;
+  // 不做任何宠物进程处理：宠物由 WMI 在 Job 外创建，生命周期由其自带看门狗管理
 }
 
 function deactivate() {

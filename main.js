@@ -1,4 +1,5 @@
 const { app, BrowserWindow, ipcMain, Menu, screen } = require('electron');
+const { execFile } = require('child_process');
 const http = require('http');
 const path = require('path');
 
@@ -113,6 +114,48 @@ function enforceFixedSize() {
   }
 }
 
+// ---------- 跟随 Trae 退出看门狗 ----------
+// 桥接扩展启动宠物时开启此功能（--follow-trae 参数或 CLAWD_PET_FOLLOW_TRAE 环境变量）；
+// 手动 npm start 或双击 exe 启动的宠物不带标记，不会自动退出。
+// 注意：扩展必须通过 WMI 创建宠物（见 extension.js），直接 spawn 的子进程会
+// 落入 Trae 的 kill-on-close Job Object，随窗口关闭被连坐杀死。
+const FOLLOW_TRAE = process.env.CLAWD_PET_FOLLOW_TRAE === '1' || process.argv.includes('--follow-trae');
+// 仅匹配 Trae 主程序（Trae.exe / Trae CN.exe），排除 trae-sandbox 等辅助进程
+const TRAE_PROCESS_RE = /^trae( cn|-cn)?\.exe$/i;
+
+function hasTraeProcess(callback) {
+  execFile('tasklist', ['/FO', 'CSV', '/NH'], { windowsHide: true }, (err, stdout) => {
+    if (err) {
+      callback(true); // 检测失败时按「仍在运行」处理，避免误杀
+      return;
+    }
+    const found = stdout.split('\n').some((line) => {
+      const m = line.match(/^"([^"]+)"/);
+      return !!m && TRAE_PROCESS_RE.test(m[1]);
+    });
+    callback(found);
+  });
+}
+
+function startTraeWatchdog() {
+  if (!FOLLOW_TRAE) return;
+  let misses = 0;
+  const timer = setInterval(() => {
+    hasTraeProcess((found) => {
+      if (found) {
+        misses = 0;
+      } else if (++misses >= 2) {
+        // 连续两次（约 20 秒）未检测到 Trae：所有窗口均已关闭，宠物自行退出。
+        // 容忍期可扛住 Trae 重启/升级时的短暂进程空窗。
+        console.log('[watchdog] 所有 Trae 窗口已关闭，宠物退出');
+        clearInterval(timer);
+        app.quit();
+      }
+    });
+  }, 10000);
+  timer.unref();
+}
+
 ipcMain.on('show-menu', () => {
   const send = (name) => () => win.webContents.send('trigger-state', name);
   const menu = Menu.buildFromTemplate([
@@ -174,6 +217,7 @@ app.whenReady().then(() => {
   createWindow();
   startActivityWatcher();
   startBridgeServer();
+  startTraeWatchdog();
 });
 
 app.on('window-all-closed', () => app.quit());

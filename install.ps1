@@ -1,4 +1,4 @@
-# ClawdPet 安装脚本 — 自动配置 Trae 扩展和 Hooks
+﻿# ClawdPet 安装脚本 — 自动配置 Trae 扩展和 Hooks
 # 用法: 解压后右键此文件 -> "使用 PowerShell 运行"
 $ErrorActionPreference = "Stop"
 $installDir = $PSScriptRoot
@@ -99,7 +99,10 @@ if (Test-Path $traeSettingsPath) {
 }
 $settings["traePetBridge.autoLaunch"] = $true
 $settings["traePetBridge.petPath"] = $installDir
-$settings | ConvertTo-Json -Depth 10 | Out-File $traeSettingsPath -Encoding utf8 -Force
+# 注意：必须写无 BOM 的 UTF-8。PowerShell 5.1 的 Out-File -Encoding utf8 会带 BOM，
+# Trae 对带 BOM 的 JSON 解析会失败（hooks 会被整体静默忽略）。
+$settingsJson = $settings | ConvertTo-Json -Depth 10
+[System.IO.File]::WriteAllText($traeSettingsPath, $settingsJson, [System.Text.UTF8Encoding]::new($false))
 Write-Host "  -> $traeSettingsPath" -ForegroundColor Green
 Write-Host "  petPath = $installDir" -ForegroundColor Gray
 
@@ -109,10 +112,27 @@ Write-Host "  petPath = $installDir" -ForegroundColor Gray
 Write-Host "`n[4/5] 配置 Hooks..." -ForegroundColor Yellow
 
 $nodePath = $null
-$localNode = Join-Path $installDir "node_modules\electron\dist\node.exe"
-if (Test-Path $localNode) {
-    $nodePath = $localNode
-} else {
+
+# 优先使用 Trae 自带的 Node（始终随 Trae 存在，比依赖系统安装更可靠）
+foreach ($traeNodeRoot in @("$env:USERPROFILE\.trae-cn\binaries\node\versions", "$env:USERPROFILE\.trae\binaries\node\versions")) {
+    if (Test-Path $traeNodeRoot) {
+        $traeNode = Get-ChildItem $traeNodeRoot -Directory -ErrorAction SilentlyContinue |
+            Sort-Object { try { [version]$_.Name } catch { [version]'0.0' } } -Descending |
+            ForEach-Object { Join-Path $_.FullName "node.exe" } |
+            Where-Object { Test-Path $_ } |
+            Select-Object -First 1
+        if ($traeNode) { $nodePath = $traeNode; break }
+    }
+}
+
+# 备选：项目本地 Electron 自带的 node.exe（部分发行版包含）
+if (-not $nodePath) {
+    $localNode = Join-Path $installDir "node_modules\electron\dist\node.exe"
+    if (Test-Path $localNode) { $nodePath = $localNode }
+}
+
+# 备选：系统 PATH / 常见安装位置
+if (-not $nodePath) {
     foreach ($candidate in @(
         (Get-Command node -ErrorAction SilentlyContinue).Source,
         "C:\Program Files\nodejs\node.exe"
@@ -120,10 +140,13 @@ if (Test-Path $localNode) {
         if ($candidate -and (Test-Path $candidate)) { $nodePath = $candidate; break }
     }
 }
+
 if (-not $nodePath) {
     Write-Host "  [警告] 未找到 Node.js，Hooks 将不可用。请安装 Node.js 后重新运行本脚本。" -ForegroundColor Red
     Write-Host "  https://nodejs.org" -ForegroundColor Yellow
     $nodePath = "node"
+} else {
+    Write-Host "  使用 Node: $nodePath" -ForegroundColor Gray
 }
 
 # 注意：必须写入完整路径，禁止使用 8.3 短路径（如 TRAE-C~1）。
@@ -134,27 +157,29 @@ $nodeCmd = if ($nodePath -match ' ') { '"{0}"' -f $nodePath } else { $nodePath }
 $scriptCmd = if ($hookScript -match ' ') { '"{0}"' -f $hookScript } else { $hookScript }
 $cmd = "$nodeCmd $scriptCmd"
 
-$hooksConfig = @{
+$hooksConfig = [ordered]@{
     version = 1
-    hooks = @{
-        UserPromptSubmit = @(@{ hooks = @(@{ type = "command"; command = $cmd; timeout = 5 }) })
-        PreToolUse       = @(@{ hooks = @(@{ type = "command"; command = $cmd; timeout = 5 }) })
-        PostToolUse      = @(@{ hooks = @(@{ type = "command"; command = $cmd; timeout = 5 }) })
-        Notification     = @(@{ hooks = @(@{ type = "command"; command = $cmd; timeout = 5 }) })
-        Stop             = @(@{ hooks = @(@{ type = "command"; command = $cmd; timeout = 5 }) })
+    hooks = [ordered]@{
+        # matcher 字段与 Trae Hooks UI 启用后生成的格式对齐，避免覆盖后需要重新启用；
+        # [ordered] 保持键序（type/command/timeout）与 UI 生成的结构一致
+        UserPromptSubmit = @([ordered]@{ hooks = @([ordered]@{ type = "command"; command = $cmd; timeout = 10 }) })
+        PreToolUse       = @([ordered]@{ matcher = "*"; hooks = @([ordered]@{ type = "command"; command = $cmd; timeout = 10 }) })
+        PostToolUse      = @([ordered]@{ matcher = "*"; hooks = @([ordered]@{ type = "command"; command = $cmd; timeout = 10 }) })
+        Notification     = @([ordered]@{ matcher = "*"; hooks = @([ordered]@{ type = "command"; command = $cmd; timeout = 10 }) })
+        Stop             = @([ordered]@{ hooks = @([ordered]@{ type = "command"; command = $cmd; timeout = 10 }) })
     }
 }
 
-# 写入全局 hooks
+# 写入全局 hooks（无 BOM UTF-8，BOM 会导致 Trae 解析失败、Hooks 被静默忽略）
 $hooksJson = $hooksConfig | ConvertTo-Json -Depth 10
-$hooksJson | Out-File $traeHooksPath -Encoding utf8 -Force
+[System.IO.File]::WriteAllText($traeHooksPath, $hooksJson, [System.Text.UTF8Encoding]::new($false))
 Write-Host "  全局 Hooks -> $traeHooksPath" -ForegroundColor Green
 
 # 同时写入项目级 hooks（如果存在 .trae 目录）
 $projectHooksDir = Join-Path $installDir ".trae"
 if (Test-Path $projectHooksDir) {
     $projectHooksPath = Join-Path $projectHooksDir "hooks.json"
-    $hooksJson | Out-File $projectHooksPath -Encoding utf8 -Force
+    [System.IO.File]::WriteAllText($projectHooksPath, $hooksJson, [System.Text.UTF8Encoding]::new($false))
     Write-Host "  项目 Hooks -> $projectHooksPath" -ForegroundColor Green
 }
 
