@@ -1,4 +1,4 @@
-﻿﻿# ClawdPet 发布打包脚本
+﻿# ClawdPet 发布打包脚本
 # 用法: 在项目根目录运行 .\release.ps1
 # 会生成 release\ClawdPet-v2.0.zip，可直接发给他人
 $ErrorActionPreference = "Stop"
@@ -14,16 +14,15 @@ if (Test-Path $stagingDir) { Remove-Item $stagingDir -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $stagingDir | Out-Null
 
 # ============================================================
-# 1. 复制宠物运行时文件
+# 1. 复制 v2.0 文件（原生桌宠）
 # ============================================================
-Write-Host "`n[1/5] 复制运行时文件..." -ForegroundColor Yellow
+Write-Host "`n[1/5] 复制文件..." -ForegroundColor Yellow
 
-# 宠物源码
-$petFiles = @("main.js", "pet.js", "preload.js", "index.html", "style.css", "package.json", "hook-handler.js")
+$petFiles = @("package.json", "hook-handler.js", "INSTALL.md", "README.md")
 foreach ($f in $petFiles) {
     Copy-Item (Join-Path $projectDir $f) (Join-Path $stagingDir $f) -Force
 }
-Write-Host "  → 宠物源码 ($($petFiles.Count) 个文件)" -ForegroundColor Green
+Write-Host "  → 根文件 ($($petFiles.Count) 个)" -ForegroundColor Green
 
 # 主题资源（复制内容而非目录本身，避免目标已存在时形成嵌套）
 $themeSrc = Join-Path $projectDir "Remielle_Dan-clawd-theme-v0.5.4"
@@ -91,10 +90,8 @@ Write-Host "  → ClawdPet-Setup-v2.0.exe（$setupSize MB，已生成在 release
 # ============================================================
 # 3. 复制安装脚本和配置
 # ============================================================
-Write-Host "`n[3/5] 复制安装脚本..." -ForegroundColor Yellow
-Copy-Item (Join-Path $projectDir "install.ps1") (Join-Path $stagingDir "install.ps1") -Force
-Copy-Item (Join-Path $projectDir "INSTALL.md") (Join-Path $stagingDir "INSTALL.md") -Force
-Write-Host "  → install.ps1 / INSTALL.md" -ForegroundColor Green
+Write-Host "`n[3/5] 复制文档..." -ForegroundColor Yellow
+Write-Host "  → INSTALL.md / README.md（已在步骤 1 复制）" -ForegroundColor Green
 
 # ============================================================
 # 4. 清理不需要的文件
@@ -124,24 +121,20 @@ Write-Host @"
 
 发布包: $zipPath ($zipSize MB)
 
-给他人安装（三种方式任选）:
+给他人安装（两种方式任选）:
   ★ EXE 安装器（推荐，单文件，无需解压）:
     直接发送 release\ClawdPet-Setup-v2.0.exe
     → 完整安装：Hooks 六态 + 官方四态切换 + 安装后指引
     → 轻量安装：仅官方四态皮肤（不动悬浮窗页面/Hooks，最稳定）
     → 卸载：v2.0 + 旧版 1.0-1.4 全部还原官方
-  独立版（Electron 桌宠，Hooks 驱动 6 态）:
-    1. 解压 zip 到任意目录
-    2. 右键 install.ps1 → "使用 PowerShell 运行"
-    3. 重启 Trae IDE
-  原生版（脚本部署，等效于安装器的完整安装）:
+  脚本部署（Trae 升级后的重部署 / 无扩展的皮肤模式）:
     1. 解压 zip 到任意目录
     2. 右键 native-pet\deploy-native-pet.ps1 → "使用 PowerShell 运行"（会弹 UAC）
     3. 重启 Trae IDE
 
 注意:
-  - 发布包体积很小（不含 Electron 运行时），独立版安装时会自动用国内源下载
-  - 不要删除解压后的目录，两种模式运行时都需要它
+  - 脚本方式不含桥接扩展与 Hooks，完整六态请用 EXE 完整安装
+  - 不要删除解压后的目录（皮肤部署与备份都在其中）
   - Trae 升级会还原原生皮肤与 main.js 补丁：重跑安装器（或 deploy-native-pet.ps1）即可
   - 如果更换了宠物主题，重新运行 release.ps1 打包即可
 "@ -ForegroundColor Cyan

@@ -1,37 +1,12 @@
 {
-  "name": "clawd-desktop-pet",
+  "name": "clawd-native-pet",
   "version": "2.0.0",
-  "description": "蕾米埃尔 · Clawd 桌面宠物（Electron 独立版 + Trae 原生悬浮窗皮肤）",
-  "main": "main.js",
+  "description": "Remielle 桌宠 for Trae 原生悬浮窗（皮肤移植 / Hooks 六态 / EXE 安装器）",
+  "license": "MIT",
   "scripts": {
-    "start": "electron .",
-    "build": "electron-builder --win portable"
+    "convert": "node native-pet/convert-native-pet.js"
   },
-  "build": {
-    "appId": "com.remielle.clawd-pet",
-    "productName": "ClawdPet",
-    "win": {
-      "target": [
-        "portable"
-      ]
-    },
-    "files": [
-      "main.js",
-      "pet.js",
-      "preload.js",
-      "index.html",
-      "style.css",
-      "package.json",
-      "Remielle_Dan-clawd-theme-v0.5.4/**/*"
-    ],
-    "portable": {
-      "artifactName": "ClawdPet.exe"
-    }
-  },
-  "devDependencies": {
-    "electron": "^37.2.0",
-    "electron-builder": "^25.0.0",
+  "dependencies": {
     "sharp": "^0.35.5"
-  },
-  "allowScripts": {}
+  }
 }

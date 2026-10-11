@@ -38,16 +38,13 @@ Trae v3.4+ 自带一个原生悬浮宠物（TRAE Bao），但默认形象被灰�
    - **卸载**：一键还原官方原样，**同时能清理本项目的旧版本（v1.0–1.4 独立宠物）**
 4. 重新打开 Trae，右下角出现 140px 的 Remielle
 
-**方式二：脚本部署（克隆仓库后）**
+**方式二：脚本部署（适合 Trae 升级后的重部署 / 无扩展皮肤模式）**
 
 ```powershell
-# 原生版（完整六态）
-右键 native-pet\deploy-native-pet.ps1 → 使用 PowerShell 运行
-# 独立版（v1.x 经典 Electron 形态，见 INSTALL.md）
-右键 install.ps1 → 使用 PowerShell 运行
+右键 native-pet\deploy-native-pet.ps1 → 使用 PowerShell 运行   # 会弹一次 UAC
 ```
 
-> 两种模式别同时开（会双宠）。原生部署会自动关掉独立版自启动。
+> 脚本方式不含桥接扩展与 Hooks 注册（六态需要它们）——首次安装请用 EXE 安装器，脚本主要面向升级后的重部署。完整说明见 [INSTALL.md](INSTALL.md)。
 
 ## 工作原理
 
@@ -76,23 +73,22 @@ Trae Hooks（五事件）
 ## 兼容性
 
 - Windows 10/11 + Trae CN 3.4.2（`main.js` 补丁锚点与版本相关，其他版本需自行核对锚点）
-- 原生版：Trae v3.4+；独立版：Trae 1.x 起
+- Trae v3.4+（CN / 国际版）；旧版 Trae 或想用 v1.x 独立 Electron 版 → 切到 [`old` 分支](../../tree/old)
 - 需要 Trae 自带 Node（Hooks 执行用，安装器自动探测）
 
 ## 开发与构建
 
 ```bash
-npm install          # 独立版依赖
-npm start            # 运行独立版宠物
+npm install                      # 安装 sharp（GIF → webp 转换用）
 .\installer\build-installer.ps1   # csc 编译单文件 EXE 安装器
-.\release.ps1        # 打 release zip
-node native-pet\convert-native-pet.js   # 主题 GIF → 动画 webp（改素材后重跑）
+.\release.ps1                     # 打 release zip + EXE
+npm run convert                   # 主题 GIF → 动画 webp（改素材后重跑）
 ```
 
 ## 分支说明
 
 - `master`：v2.0 当前版本（原生悬浮窗移植 + EXE 安装器）
-- `old`：v1.0–1.4 独立 Electron 宠物（历史版本）
+- `old`：v1.0–1.4 独立 Electron 宠物（旧版 Trae 与独立模式用户看这里）
 
 ## 致谢
 
