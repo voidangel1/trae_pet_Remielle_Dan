@@ -229,7 +229,7 @@ namespace ClawdPetInstaller
             {
                 Installer.InjectPoller(t, Log);                   // 悬浮窗六态轮询脚本
                 string runtime = Installer.DeployRuntime(Log);    // %LOCALAPPDATA%\ClawdPet-v2\hook-handler.js
-                Installer.InstallExtension(runtime, Log);
+                Installer.InstallExtension(t, runtime, Log);
                 Installer.RegisterHooks(runtime, Log);
                 Installer.ConfigureBridge(runtime, Log);          // settings.json: petPath + autoLaunch=false
             }
@@ -690,9 +690,22 @@ namespace ClawdPetInstaller
             return dir;
         }
 
-        public static void InstallExtension(string runtime, Action<string> log)
+        public static void InstallExtension(TraeInfo t, string runtime, Action<string> log)
         {
             string dst = Path.Combine(ExtDir(), "remielle.trae-pet-bridge-2.0.1");
+
+            // 首选：VSIX + Trae CLI 官方安装流程。直接往 extensions 目录拷贝的"旁载"方式
+            // 已被 Trae CN 封锁：启动扫描时对未注册目录执行 "Marked extension as removed"，
+            // 写入 .obsolete 并拒绝加载（状态栏/六态服务器全部不出现）。
+            // CLI 安装会走 Trae 自己的注册流程（写 extensions.json + unset 移除标记）。
+            if (t != null && TryInstallViaCli(t, log))
+            {
+                CleanObsolete(log);
+                log("[OK] 桥接扩展已通过 Trae CLI 安装注册（remielle.trae-pet-bridge-2.0.1）");
+                return;
+            }
+
+            // 回退：CLI 不可用/失败时直接拷目录（Trae 若清除它，重跑安装器并先退出 Trae）
             Directory.CreateDirectory(ExtDir());
             // 清掉旧版本目录（0.x/2.0.0 及更早）
             foreach (string old in Directory.EnumerateDirectories(ExtDir(), "remielle.trae-pet-bridge-*"))
@@ -700,7 +713,157 @@ namespace ClawdPetInstaller
             Directory.CreateDirectory(dst);
             ExtractResource("ext_extension.js", Path.Combine(dst, "extension.js"));
             ExtractResource("ext_package.json", Path.Combine(dst, "package.json"));
-            log("[OK] 桥接扩展已安装（remielle.trae-pet-bridge-2.0.1）");
+            CleanObsolete(log);
+            log("[警告] 已回退为目录拷贝方式。若重启 Trae 后状态栏不显示，请完全退出 Trae 后重跑安装器（走 CLI 注册）。");
+        }
+
+        // ---------- VSIX + CLI 安装 ----------
+        // 调用 Trae 自带的 CLI（等价于 bin\trae-cn.cmd）：
+        //   ELECTRON_RUN_AS_NODE=1 "Trae CN.exe" resources\app\out\cli.js --install-extension <vsix> --force
+        static bool TryInstallViaCli(TraeInfo t, Action<string> log)
+        {
+            try
+            {
+                string traeExe = Path.Combine(t.BaseDir, "Trae CN.exe");
+                string cliJs = Path.Combine(t.BaseDir, "resources", "app", "out", "cli.js");
+                if (!File.Exists(traeExe) || !File.Exists(cliJs))
+                {
+                    log("[提示] 未找到 Trae CLI，扩展将退回目录拷贝方式。");
+                    return false;
+                }
+                string vsix = BuildVsix();
+                if (IsTraeRunning())
+                    log("[提示] Trae 正在运行：扩展注册需要在 Trae 完全退出后才能成功，本次 CLI 安装可能失败。");
+                var psi = new ProcessStartInfo(traeExe)
+                {
+                    Arguments = "\"" + cliJs + "\" --install-extension \"" + vsix + "\" --force",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                };
+                psi.EnvironmentVariables["ELECTRON_RUN_AS_NODE"] = "1";
+                psi.EnvironmentVariables.Remove("VSCODE_DEV");          // 与 bin\trae-cn.cmd 行为一致
+                log("[安装] Trae CLI：注册扩展 remielle.trae-pet-bridge-2.0.1 ...");
+                using (var p = Process.Start(psi))
+                {
+                    string output = p.StandardOutput.ReadToEnd();
+                    string err = p.StandardError.ReadToEnd();
+                    if (!p.WaitForExit(90000))
+                    {
+                        try { p.Kill(); } catch { }
+                        log("[警告] CLI 安装超时。");
+                        return false;
+                    }
+                    if (p.ExitCode != 0)
+                    {
+                        string tail = (output + err).Trim();
+                        if (tail.Length > 400) tail = tail.Substring(tail.Length - 400);
+                        log("[警告] CLI 安装失败（exit " + p.ExitCode + "）：" + tail);
+                        return false;
+                    }
+                }
+                // 硬校验：extensions.json 真正出现注册条目才算成功
+                if (!IsRegisteredInExtensionsJson())
+                {
+                    log("[警告] CLI 执行完成但未写入注册信息（可能 Trae 正在运行锁定了扩展目录）。");
+                    return false;
+                }
+                return true;
+            }
+            catch (Exception e) { log("[警告] CLI 安装异常：" + e.Message); return false; }
+        }
+
+        static bool IsRegisteredInExtensionsJson()
+        {
+            try
+            {
+                string file = Path.Combine(ExtDir(), "extensions.json");
+                if (!File.Exists(file)) return false;
+                return File.ReadAllText(file).IndexOf("remielle.trae-pet-bridge", StringComparison.OrdinalIgnoreCase) >= 0;
+            }
+            catch { return false; }
+        }
+
+        // 用嵌入资源现场打包 VSIX（zip 结构：extension.vsixmanifest + [Content_Types].xml + extension/*）
+        static string BuildVsix()
+        {
+            string vsix = Path.Combine(RuntimeDir(), "downloads", "trae-pet-bridge-2.0.1.vsix");
+            Directory.CreateDirectory(Path.GetDirectoryName(vsix));
+            using (var zip = System.IO.Compression.ZipFile.Open(vsix, System.IO.Compression.ZipArchiveMode.Create))
+            {
+                AddTextEntry(zip, "extension.vsixmanifest", VsixManifest);
+                AddTextEntry(zip, "[Content_Types].xml", VsixContentTypes);
+                AddResourceEntry(zip, "extension/extension.js", "ext_extension.js");
+                AddResourceEntry(zip, "extension/package.json", "ext_package.json");
+            }
+            return vsix;
+        }
+
+        static void AddTextEntry(System.IO.Compression.ZipArchive zip, string entryName, string content)
+        {
+            System.IO.Compression.ZipArchiveEntry e = zip.CreateEntry(entryName);
+            using (var w = new StreamWriter(e.Open(), new UTF8Encoding(false)))
+                w.Write(content);
+        }
+
+        static void AddResourceEntry(System.IO.Compression.ZipArchive zip, string entryName, string resourceName)
+        {
+            System.IO.Compression.ZipArchiveEntry e = zip.CreateEntry(entryName);
+            using (var s = Assembly.GetExecutingAssembly().GetManifestResourceStream(resourceName))
+            {
+                if (s == null) throw new Exception("缺少嵌入资源 " + resourceName);
+                using (var os = e.Open()) s.CopyTo(os);
+            }
+        }
+
+        // Identity Id+Publisher 拼成扩展 ID remielle.trae-pet-bridge，与 extension/package.json 一致
+        const string VsixManifest =
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" +
+            "<PackageManifest Version=\"2.0.0\" xmlns=\"http://schemas.microsoft.com/developer/vsx-schema/2011\">\n" +
+            "  <Metadata>\n" +
+            "    <Identity Language=\"en-US\" Id=\"trae-pet-bridge\" Version=\"2.0.1\" Publisher=\"remielle\"/>\n" +
+            "    <DisplayName>Trae Pet Bridge</DisplayName>\n" +
+            "    <Description xml:space=\"preserve\">Push Trae coding events to desktop pet</Description>\n" +
+            "    <Properties>\n" +
+            "      <Property Id=\"Microsoft.VisualStudio.Code.Engine\" Value=\"^1.75.0\"/>\n" +
+            "      <Property Id=\"Microsoft.VisualStudio.Code.ExtensionKind\" Value=\"workspace\"/>\n" +
+            "    </Properties>\n" +
+            "  </Metadata>\n" +
+            "  <Installation>\n" +
+            "    <InstallationTarget Id=\"Microsoft.VisualStudio.Code\"/>\n" +
+            "  </Installation>\n" +
+            "  <Assets>\n" +
+            "    <Asset Type=\"Microsoft.VisualStudio.Code.Manifest\" Path=\"extension/package.json\"/>\n" +
+            "  </Assets>\n" +
+            "</PackageManifest>\n";
+
+        const string VsixContentTypes =
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" +
+            "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">\n" +
+            "  <Default Extension=\"json\" ContentType=\"application/json\"/>\n" +
+            "  <Default Extension=\"vsixmanifest\" ContentType=\"text/xml\"/>\n" +
+            "  <Default Extension=\"js\" ContentType=\"text/javascript\"/>\n" +
+            "</Types>\n";
+
+        // 清理 extensions\.obsolete 中 remielle.trae-pet-bridge-* 条目（Trae/VS Code 的延迟删除清单）
+        static void CleanObsolete(Action<string> log)
+        {
+            try
+            {
+                string file = Path.Combine(ExtDir(), ".obsolete");
+                if (!File.Exists(file)) return;
+                var ser = new JavaScriptSerializer();
+                var dict = ser.DeserializeObject(File.ReadAllText(file)) as Dictionary<string, object>;
+                if (dict == null) return;
+                string[] stale = dict.Keys.Where(k => k.StartsWith("remielle.trae-pet-bridge-", StringComparison.Ordinal)).ToArray();
+                if (stale.Length == 0) return;
+                foreach (string k in stale) dict.Remove(k);
+                if (dict.Count == 0) File.Delete(file);
+                else File.WriteAllText(file, ser.Serialize(dict));
+                log(string.Format("[OK] 已清除 .obsolete 延迟删除标记（{0} 条）", stale.Length));
+            }
+            catch (Exception e) { log("[警告] .obsolete 清理失败（若 Trae 正在运行，其进程锁定了该文件）：" + e.Message); }
         }
 
         public static void RegisterHooks(string runtime, Action<string> log)

@@ -1,4 +1,4 @@
-﻿# build-installer.ps1 — 编译 ClawdPet 安装器 EXE（csc，零第三方依赖）
+﻿﻿﻿﻿# build-installer.ps1 — 编译 ClawdPet 安装器 EXE（csc，零第三方依赖）
 #
 # 产出: ..\release\ClawdPet-Setup-v2.0.1.exe（单文件，素材/扩展/脚本全部嵌入）
 # 前置: native-pet\assets\*.webp（皮肤 8 张 + official-backup 官方 4 张）已生成
