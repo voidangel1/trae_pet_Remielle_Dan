@@ -1,11 +1,15 @@
 // hook-handler.js — Trae Hook 事件 → 桌面宠物状态桥接
 // 用 net.Socket 直接发 HTTP（快速、不阻塞 Agent），不输出 stdout
+// v2.1: 原生悬浮窗的状态服务器由 trae-pet-bridge 扩展内置（27416），
+// hook-handler 只负责落盘状态（writeLastPush）+ 推送独立版宠物（27315 桥），
+// 不再通过 WMI 拉起任何进程（沙箱/Job 环境下不稳定且会误启 Trae.exe 窗口）。
 const net = require('net');
 const fs = require('fs');
 const path = require('path');
 
 const LOG_FILE = path.join(__dirname, 'hook-debug.log');
-// 最近一次推送的状态（每次 Hook 都是独立进程，需要落盘跨进程共享）
+// 最近一次推送的状态（每次 Hook 都是独立进程，需要落盘跨进程共享；
+// 原生悬浮窗模式：扩展内置服务器每次请求实时读取此文件）
 const STATE_FILE = path.join(__dirname, 'hook-state.json');
 
 function log(msg) {
@@ -29,10 +33,14 @@ function writeLastPush(state) {
 
 function detectError(data, stopReason) {
   const values = [];
+  // v2.0 修复：text_content / last_assistant_message 是完整的助手回复文本，
+  // 里面出现「错误/失败」等字样（如日志、排障总结）会被误判成 error 态，
+  // 必须跳过；错误判定只看结构化字段（stopReason、error 对象等）。
+  const TEXT_KEYS = new Set(['text_content', 'last_assistant_message']);
   const collect = (value, key = '', depth = 0) => {
     if (depth > 6 || values.length > 200) return;
     if (typeof value === 'string') {
-      values.push(`${key} ${value.substring(0, 2000)}`);
+      if (!TEXT_KEYS.has(key.trim())) values.push(`${key} ${value.substring(0, 2000)}`);
     } else if (Array.isArray(value)) {
       value.slice(0, 50).forEach((item) => collect(item, key, depth + 1));
     } else if (value && typeof value === 'object') {
@@ -47,8 +55,23 @@ function detectError(data, stopReason) {
   return /error|fail(?:ed|ure)?|exception|abort(?:ed)?|cancel(?:led)?|interrupt(?:ed)?|crash(?:ed)?|timeout|timed.?out|websocket|http status 5\d\d|模型异常|模型错误|模型中断|中断|失败|异常|错误/.test(text);
 }
 
+// v2.0：判定 Stop 时模型是否在向用户提问（notification 态的新语义）。
+// 看 last_assistant_message 的结尾：问题通常出现在消息末尾；
+// 先剔除代码块（代码里的 ?/吗 是误报源），再匹配问句特征。
+function detectQuestion(data) {
+  const text = `${data.last_assistant_message || ''}\n${data.text_content || ''}`.trim();
+  if (!text) return false;
+  const stripped = text.replace(/```[\s\S]*?```/g, '').replace(/`[^`\n]*`/g, '');
+  const tail = stripped.trimEnd().slice(-400);
+  return /[？?]\s*$/.test(tail)
+    || /(吗|呢)[？?；;。]?\s*$/.test(tail)
+    || /(?:请确认|请选择|是否需要|需要我|告诉我)/.test(tail.slice(-120));
+}
+
 function pushState(state) {
+  // 1) 落盘（原生悬浮窗：扩展内置服务器实时读取；独立版：hook-state 机制）
   writeLastPush(state);
+  // 2) 推送独立版宠物（27315 桥，原生模式下桥不在 → 静默失败即可）
   const body = JSON.stringify({ state });
   const client = new net.Socket();
   client.connect(27315, '127.0.0.1', () => {
@@ -112,7 +135,15 @@ process.stdin.on('end', () => {
         break;
       }
       case 'Stop':
-        state = detectError(data, stopReason) ? 'error' : 'idle';
+        if (detectError(data, stopReason)) {
+          state = 'error';
+        } else if (detectQuestion(data)) {
+          // v2.0 新语义：notification = 模型向用户提问、等待回答
+          state = 'notification';
+          log('Stop 判定为模型提问 → notification');
+        } else {
+          state = 'idle';
+        }
         break;
       default:                 state = 'idle'; break;
     }

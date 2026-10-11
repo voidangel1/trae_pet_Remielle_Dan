@@ -2,6 +2,7 @@
 node_modules/
 dist/
 release/
+installer/build/
 
 # 本地调试日志
 hook-debug.log
@@ -9,6 +10,10 @@ hook-debug.log
 
 # 运行时状态（hook-handler 跨进程共享最近推送的状态）
 hook-state.json
+hook-mode.json
+
+# 原生桌宠皮肤的本机专属备份（从本机 Trae 安装目录提取，不随仓库分发）
+native-pet/assets/official-backup/
 
 # Trae 本地配置
 .trae/

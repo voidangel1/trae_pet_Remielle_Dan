@@ -2,13 +2,42 @@
 
 ClawdPet 是一个会根据 Trae Agent 工作状态自动切换动画的桌面宠物。
 
+v2.0 起有三种安装方式，**任选其一，不要同时开启**：
+
+- **EXE 安装器**（最简单，推荐分发用）：`release\ClawdPet-Setup-v2.0.exe` 单文件，双击即用——完整安装（Hooks 六态 + 官方四态切换 + 安装后指引）/ 轻量安装（仅官方四态）/ 卸载（v2.0 + 旧版 1.0-1.4 全部还原官方）。
+- **原生模式**（脚本部署，等效于安装器的完整安装，Trae v3.4+）：把宠物皮肤移植进 Trae 原生悬浮窗，零独立进程，随 Trae 启停。见「一 A」。
+- **独立模式**（v1.x 经典）：独立 Electron 桌宠 + Hooks 驱动。见「一 B」及后续章节。
+
 支持：
 
 - Trae CN
 - Trae 国际版
 - Windows 10 / Windows 11
 
-## 一、安装前准备
+## 一 A、原生模式安装（推荐）
+
+要求 Trae CN / 国际版 v3.4 及以上（含「悬浮窗」功能）。
+
+1. 打开解压后的 `ClawdPet` 文件夹。
+2. 右键 `native-pet\deploy-native-pet.ps1`。
+3. 选择「使用 PowerShell 运行」，在 UAC 弹窗中点击「是」（仅写入 Trae 安装目录那一步需要管理员）。
+4. 重启 Trae，宠物出现在屏幕右下角。
+
+脚本会自动完成：
+
+- 部署 4 张动画 webp 皮肤（静立 / 忙碌 / 卖力 / 悬停拖拽）。
+- 备份 Trae 官方素材到 `native-pet\assets\official-backup\`。
+- 给 Trae 主进程 `main.js` 打 `qF` 补丁（解锁官方灰度关闭的 traebao 宠物形象）。
+- 把 `trae.floatingChat.buttonIcon` 切换为 `traebao`，并关闭独立模式的自动启动（`-KeepClawd` 参数可保留双开）。
+
+原生模式常见问题：
+
+- **Trae 升级后宠物变回官方形象**：升级会还原官方素材与 main.js，重跑一次 `deploy-native-pet.ps1` 即可。
+- **想换回官方形象 / 独立模式**：`powershell -File native-pet\deploy-native-pet.ps1 -Restore`。
+- **想调整宠物大小**：Trae 设置中搜 `trae.floatingChat.size`（0.5–2 倍）。
+- 状态语义与独立版一致：Trae Hooks 驱动六态（提问→thinking、编辑/查看/调用工具→editing、**模型提问→notification 常驻等待回答**、异常→error）。状态服务器（127.0.0.1:27416）由首个 Hook 事件自动拉起，不可用时回落官方四态（会话忙碌）。宠物尺寸默认 140px（可在 Trae 设置 `trae.floatingChat.size` 0.5–2 倍微调）。**点击 Trae 状态栏 Pet 图标可切换 Hooks 六态 / 官方四态**。
+
+## 一 B、安装前准备（独立模式）
 
 1. 安装 Trae CN 或 Trae 国际版。
 2. 完全退出 Trae，包括后台仍在运行的 Trae 窗口。
@@ -199,13 +228,13 @@ traePetBridge.autoLaunch
 Trae CN：
 
 ```text
-%USERPROFILE%\.trae-cn\extensions\remielle.trae-pet-bridge-0.2.0
+%USERPROFILE%\.trae-cn\extensions\remielle.trae-pet-bridge-2.0.0
 ```
 
 Trae 国际版：
 
 ```text
-%USERPROFILE%\.trae\extensions\remielle.trae-pet-bridge-0.2.0
+%USERPROFILE%\.trae\extensions\remielle.trae-pet-bridge-2.0.0
 ```
 
 3. 删除对应的全局 Hooks 文件中的 ClawdPet 配置。
@@ -227,5 +256,6 @@ Trae 国际版：
 - `package.json`
 - `node_modules\electron\`
 - `Remielle_Dan-clawd-theme-v0.5.4\`
+- `native-pet\`（原生模式：转换/部署脚本 + `assets\` 下的 4 张 webp 皮肤；本机 `official-backup\` 不打包）
 
 使用者不需要安装 Node.js，因为发布包已经包含 Electron 运行时。安装脚本会优先使用发布包内的 Node 运行时配置 Hooks。

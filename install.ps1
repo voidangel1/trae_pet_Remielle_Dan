@@ -38,11 +38,11 @@ if (-not $traeExtRoot) {
 # 2. 安装桥接扩展
 # ============================================================
 Write-Host "`n[1/5] 安装 Trae 桥接扩展..." -ForegroundColor Yellow
-$extDir = Join-Path $traeExtRoot "remielle.trae-pet-bridge-0.2.0"
+$extDir = Join-Path $traeExtRoot "remielle.trae-pet-bridge-2.0.0"
 
 # 清理旧版本扩展目录，避免新旧共存被 Trae 重复加载
 Get-ChildItem $traeExtRoot -Directory -Filter "remielle.trae-pet-bridge-*" -ErrorAction SilentlyContinue |
-    Where-Object { $_.Name -ne "remielle.trae-pet-bridge-0.2.0" } |
+    Where-Object { $_.Name -ne "remielle.trae-pet-bridge-2.0.0" } |
     ForEach-Object {
         Write-Host "  清理旧版扩展: $($_.Name)" -ForegroundColor Gray
         Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue

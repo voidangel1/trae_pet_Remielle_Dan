@@ -1,76 +1,104 @@
-# ClawdPet — 蕾米埃尔 · Clawd 桌面宠物（Trae IDE）
+# Remielle Pet for Trae — 蕾米埃尔桌面宠物
 
-本项目基于 `https://github.com/6666ccc/codex_pet_Remielle_Dan` 进行二次开发。
+把 [Remielle（蕾米埃尔）](Remielle_Dan-clawd-theme-v0.5.4/) 接进 **Trae IDE 原生悬浮窗**：你的 AI 助手在思考、写代码、等你确认时，右下角的小人会实时做出对应动作。零独立进程、随 Trae 启停、一个 EXE 装好。
 
-一个运行在 Windows 桌面上的 Electron 桌宠，通过本地 HTTP 桥（端口 27315）接收 Trae IDE 扩展与 Hooks 推送的事件，实时反映 Agent 的工作状态（空闲 / 注意 / 思考 / 编辑 / 通知 / 错误）。
+基于 [6666ccc/codex_pet_Remielle_Dan](https://github.com/6666ccc/codex_pet_Remielle_Dan) 二次开发（主题作者：刘畅）。
 
-## 功能
+| 待机 | 思考 | 编辑 |
+|---|---|---|
+| ![idle](Remielle_Dan-clawd-theme-v0.5.4/assets/idle-loop.gif) | ![thinking](Remielle_Dan-clawd-theme-v0.5.4/assets/thinking.gif) | ![editing](Remielle_Dan-clawd-theme-v0.5.4/assets/editing.gif) |
 
-- 六种状态动画（360×360 GIF）：idle / attention / thinking / editing / notification / error
-- Agent 工作时持续显示 thinking / editing，完成后自动回到 idle
-- 拖拽移动（右键菜单「可移动」解锁）、单击、双击（摇晃 + error 表情）等交互
-- 单实例运行，多个 Trae 项目共享同一只宠物
-- F12 打开 DevTools 调试
+## 它能做什么
+
+Trae v3.4+ 自带一个原生悬浮宠物（TRAE Bao），但默认形象被灰度关闭、只剩一个圆球，且状态只有「空闲/忙碌/超忙碌/拖拽」四种静态图。本项目：
+
+- **解锁官方宠物形象**，并把 Remielle 的 6 套动画换上去（逐帧时序 1:1 保留，比原 GIF 更精确）
+- **恢复完整的 Hooks 六态状态机**——你发消息她开始思考、AI 改文件她低头干活、AI 向你提问她会举手等你、出错她有专属表情
+- 状态栏 **Pet 图标一键切换** Hooks 六态 / 官方四态（桥挂了自动回落官方模式，宠物永不消失）
+- 官方悬浮窗的全部交互保留：单击开关对话浮窗、右键菜单、拖拽、`Alt+Space`、0.5–2 倍缩放
+
+| 你的操作 / Trae 事件 | 宠物状态 |
+|---|---|
+| 无事发生 | idle 呼吸循环 |
+| 发送消息（UserPromptSubmit） | thinking |
+| AI 执行工具/编辑文件（PreToolUse） | editing |
+| AI 回复以问句结尾、等你确认（Stop） | notification（常驻直到你回复） |
+| 出错（Stop 错误字段） | error |
+| 悬停 / 拖拽 | attention |
 
 ## 安装
 
-1. 解压发布包（或直接克隆本仓库）
-2. 右键 `install.ps1` → 「使用 PowerShell 运行」
-3. 重启 Trae IDE
+**方式一：EXE 安装器（推荐）**
 
-脚本会自动：
-- 安装桥接扩展到 Trae（CN / 国际版自适应）
-- 用国内镜像安装 Electron 运行时
-- 配置 Trae 设置（自动启动 + 项目路径）
-- 注册全局 Hooks（UserPromptSubmit / PreToolUse / PostToolUse / Notification / Stop）
+1. 下载 [release 里的 `ClawdPet-Setup-v2.0.exe`](release/)（约 9MB，素材全部内嵌，无需克隆仓库）
+2. 退出 Trae（托盘右键 → 退出），双击运行
+3. 三种模式任选：
+   - **完整安装**：六态 + 官方四态切换 + Hooks + 扩展 + 安装后指引
+   - **轻量安装**：只换官方四态皮肤，不碰 Hooks 与页面注入（最稳）
+   - **卸载**：一键还原官方原样，**同时能清理本项目的旧版本（v1.0–1.4 独立宠物）**
+4. 重新打开 Trae，右下角出现 140px 的 Remielle
 
-## 开发
+**方式二：脚本部署（克隆仓库后）**
+
+```powershell
+# 原生版（完整六态）
+右键 native-pet\deploy-native-pet.ps1 → 使用 PowerShell 运行
+# 独立版（v1.x 经典 Electron 形态，见 INSTALL.md）
+右键 install.ps1 → 使用 PowerShell 运行
+```
+
+> 两种模式别同时开（会双宠）。原生部署会自动关掉独立版自启动。
+
+## 工作原理
+
+```
+Trae Hooks（五事件）
+   └→ hook-handler.js 落盘状态（hook-state.json）
+        └→ trae-pet-bridge 扩展内置状态服务器（127.0.0.1:27416，随扩展启停）
+             └→ floatingButton.html 注入的轮询脚本（500ms）
+                  └→ 按状态名切换 webp 动画
+```
+
+皮肤素材直接替换 Trae 安装目录 `iCubeFloatingChat\...\icons\traebao\`；`main.js` 的 `qF()` 图标归一化函数打了字节级补丁（官方 3.4.2 把它硬编码成 `return "ball"`，这就是宠物被「关掉」的原因）；窗口与立绘尺寸补丁到 140px。所有改动均带回滚（`deploy-native-pet.ps1 -Restore` / 安装器卸载）。
+
+## 排坑实录（装不上先看这里）
+
+1. **hooks.json 的 JSON 结构**：每个事件必须是 `[{ "matcher": "*", "hooks": [...] }]` **数组**（工具类事件带 `matcher`），与官方 Hooks UI 生成格式一致；写成纯对象会被 Trae 原生加载器**静默丢弃**——hooks 一个都不触发，且无任何报错。
+2. **命令不能带引号**：hook 的 `command` 字段按空格切分，`"node.exe" "handler.js"` 这种带引号写法同样静默失效。本项目全部用无空格路径的无引号拼接。
+3. **hooks.json / settings.json 不能有 BOM**，否则整个文件被静默忽略。
+4. **配置只在 Trae 启动时加载**：改完 hooks.json / settings.json 必须完全重启 Trae（重载窗口无效，hook 执行器进程不会重启）。
+5. **运行 Trae 时别跑安装器写配置**：Trae 退出时可能把内存里的旧配置写回覆盖你的修改。
+
+## Trae 升级后
+
+升级会还原 `main.js` 和官方素材 → 右键重跑 `deploy-native-pet.ps1`（或重跑安装器完整安装）即可，脚本幂等、自动刷新官方素材备份。
+
+## 兼容性
+
+- Windows 10/11 + Trae CN 3.4.2（`main.js` 补丁锚点与版本相关，其他版本需自行核对锚点）
+- 原生版：Trae v3.4+；独立版：Trae 1.x 起
+- 需要 Trae 自带 Node（Hooks 执行用，安装器自动探测）
+
+## 开发与构建
 
 ```bash
-npm install
-npm start      # 运行宠物
-npm run build  # 打包便携版 exe
-.\release.ps1  # 生成可分发的 zip 发布包
+npm install          # 独立版依赖
+npm start            # 运行独立版宠物
+.\installer\build-installer.ps1   # csc 编译单文件 EXE 安装器
+.\release.ps1        # 打 release zip
+node native-pet\convert-native-pet.js   # 主题 GIF → 动画 webp（改素材后重跑）
 ```
 
-## 目录结构
+## 分支说明
 
-```
-main.js      Electron 主进程（窗口、拖拽、本地桥接服务器）
-pet.js       渲染进程（状态机、交互）
-preload.js   上下文桥接
-index.html   页面入口
-style.css    样式
-hook-handler.js   Trae Hooks 处理器
-trae-pet-bridge/  Trae 扩展（转发事件到本地桥）
-Remielle_Dan-clawd-theme-v0.5.4/  主题资源（GIF + theme.json）
-```
+- `master`：v2.0 当前版本（原生悬浮窗移植 + EXE 安装器）
+- `old`：v1.0–1.4 独立 Electron 宠物（历史版本）
 
-## 已知问题修复（v1.4）
+## 致谢
 
-- **彻底修复宠物随窗口关闭退出的问题（v1.2 修复无效的真正根因）**：v1.2 移除 taskkill + 看门狗的方案部署后实测宠物依然精确跟随「启动它的窗口」死亡。深入排查发现真正根因是 **Windows Job Object 连坐**：Trae 的扩展宿主（exthost）运行在 kill-on-close 的 Job Object 内，exthost 直接 spawn 的宠物进程自动继承 Job 成员资格，窗口关闭、Trae 释放 Job 句柄时，宠物被系统连坐杀死——`detached: true` 和删除 taskkill 都无法幸免（已用 `IsProcessInJob` API 实测确认）。修复：扩展改用 **WMI `Win32_Process.Create`** 启动宠物——由系统服务进程 WmiPrvSE（在危险 Job 之外）创建进程，宠物不继承 exthost 的 Job，窗口关闭后存活，生命周期完全交给自带看门狗（所有 Trae 窗口关闭后约 20 秒内自行退出）。因 WMI 无法传递环境变量，看门狗开关从 `CLAWD_PET_FOLLOW_TRAE` 环境变量改为 `--follow-trae` 命令行参数（环境变量方式保留兼容手动测试）。
-- install.ps1 生成的 hooks.json 改用 `[ordered]` 保持键序与 Trae Hooks UI 生成的格式一致。
+- Remielle 主题：刘畅（`Remielle_Dan-clawd-theme-v0.5.4`，MIT）
+- 上游项目：[6666ccc/codex_pet_Remielle_Dan](https://github.com/6666ccc/codex_pet_Remielle_Dan)
 
-## 已知问题修复（v1.3）
+## License
 
-- **修复 Agent 异常打断时「错误」状态几乎无法显示的问题**：实测发现 `Stop` 事件的错误检测本身工作正常，但 Trae 判定异常打断后会紧接着（约 300ms）弹出一条不含错误关键词的系统通知，把宠物刚切换到的 error 覆盖成 notification。现在 hook-handler 通过状态文件（`hook-state.json`）跨进程记录最近推送的状态，error 后 15 秒内的 Notification 直接忽略；pet.js 同步做了双保险（error 展示的 3 秒内忽略 notification）。
-- **修复「命令审批 / Agent 提问」场景「通知」状态不触发的问题**：分析 hook-debug.log 发现这两种场景下 Trae 完全不触发任何 Hook 事件（Notification 仅在任务完成/异常打断时触发），宠物会一直卡在 editing。现在 pet.js 增加等待检测：`PreToolUse(editing)` 后超过 45 秒无任何后续事件，判定为等待用户操作，持续显示 notification 直到下一个事件到达。
-- hook-handler 现在会记录 `Notification` / `Stop` 事件的完整 payload（截断 1500 字符），便于后续排查状态误判。
-- **修复 install.ps1 在 Windows PowerShell 5.1 下行为错乱的问题**：脚本原为 UTF-8 无 BOM 编码，PowerShell 5.1 会按 GBK 解码，中文注释的 UTF-8 字节序列在错位解码时会吞掉紧跟的换行符，导致下一行代码被并入注释而**静默跳过**（表现为：扩展未安装、Hook 命令被写成空命令、`$projectHooksDir` 为 null 报错等）。install.ps1 / release.ps1 已转为 UTF-8 with BOM。
-- **修复 install.ps1 写入的 hooks.json 带 BOM 导致 Hooks 被静默忽略的问题**：PowerShell 5.1 的 `Out-File -Encoding utf8` 会写入带 BOM 的 UTF-8，而 Trae 解析 hooks.json 时不接受 BOM，整个文件被静默忽略——表现为 Hooks 开关已开启但任何事件都不触发（本机 10:59 起 Hooks 整体静默近两小时，即由首次成功运行 install.ps1 引入）。已改为 `[System.IO.File]::WriteAllText` 无 BOM 写入（settings.json / hooks.json 共 3 处），并清除了本机两份文件的存量 BOM。**注意：hooks.json 是 Trae 启动时加载的，修复后需重启 Trae 生效。**
-- **修复 install.ps1 的 Node 检测从未成功的问题**：检测链首选的 `node_modules\electron\dist\node.exe` 在 Electron 发行包中并不存在，系统 PATH 也可能没有 Node，导致写入的 Hook 命令无效。现在优先使用 Trae 自带的 Node（`~\.trae-cn\binaries\node\versions\*\node.exe`，随 Trae 始终存在），再回退到 Electron 本地 node / 系统 Node。Hook 配置同时补齐 `matcher` 字段并统一 timeout 为 10，与 Trae Hooks UI 启用后的格式对齐，覆盖后无需重新启用。
-
-## 已知问题修复（v1.2）
-
-- **修复关闭第一个 Trae 窗口会导致宠物退出的问题**：此前宠物进程由最先打开的窗口的扩展托管，该窗口一关闭，宠物就被连带结束。现在扩展停用时不再杀死宠物，宠物通过自带看门狗自管生命周期——桥接扩展启动宠物时打上「跟随 Trae」标记（环境变量 `CLAWD_PET_FOLLOW_TRAE=1`），宠物每 10 秒检测一次系统中是否还有 Trae 主进程（`Trae.exe` / `Trae CN.exe`，排除 `trae-sandbox` 等辅助进程），连续两次未检出（约 20 秒容忍期，可扛住 Trae 重启/升级时的进程空窗）才自行退出。手动 `npm start` 或双击 exe 启动的宠物不带标记，不会自动退出。
-
-## 已知问题修复（v1.1）
-
-- **修复 Trae 1.107+ 更新后状态全部失效的问题**：新版 Trae 要求 Hooks 必须在「设置 → Hooks」中手动启用，且执行模式默认为沙箱（会静默跳过 Hook 命令）。安装后需按 INSTALL.md 手动启用一次。
-- Hooks 命令改用完整路径，不再使用 8.3 短路径（Trae 升级自带 Node 后短路径会失效导致 Hooks 被静默跳过）。
-- Pet Bridge 扩展不再在 Trae 启动时自动弹出日志面板。
-- install.ps1 会自动清理旧版本扩展目录，避免新旧共存重复加载。
-
-## 已知问题修复（v1.0）
-
-修复了 Windows 显示缩放非 100%（如 125% / 150%）的屏幕上，拖拽宠物时窗口不断变大的问题（Electron 上游 bug electron#48247）。拖拽现在通过 `setBounds` 显式携带固定宽高实现，并附带 `resize` 事件兜底，窗口尺寸恒定 180×180。
+MIT

@@ -1,0 +1,52 @@
+<!--CLAWD-PET-POLL-START-->
+<script>
+/* ClawdPet v2.0: Hooks 六态轮询 + 模式开关（安装器注入，勿手改） */
+(function () {
+  var STATE_URL = 'http://127.0.0.1:27416/state';
+  var STALE_MS = 25000;
+  var EXTRA = { attention: 'hover-drag.webp', thinking: 'thinking.webp', editing: 'editing.webp', notification: 'notification.webp', error: 'error.webp' };
+  var origGetTraebaoSrc = getTraebaoSrc;
+  var hookState = null;
+
+  function stateDir() {
+    var p = currentStaticPath || '';
+    var m = p.match(/^(.*[\\/])/);
+    return m ? m[1] : '';
+  }
+
+  getTraebaoSrc = function () {
+    if ((isHovering || isDragging) && runningTasks.length === 0 && currentHoverPath) return currentHoverPath;
+    if (hookState && currentIconName === 'traebao') {
+      var extra = EXTRA[hookState.state];
+      var dir = stateDir();
+      if (extra && dir) return dir + extra;
+      return currentStaticPath; // idle / 未知状态
+    }
+    return origGetTraebaoSrc();
+  };
+
+  var lastState = null;
+  setInterval(function () {
+    fetch(STATE_URL, { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) {
+        var next = null;
+        if (j && j.mode !== 'official' && typeof j.state === 'string' && j.ts) {
+          var age = Date.now() - j.ts;
+          // notification（模型提问、等待用户回答）常驻；其余状态 25s 过期回落官方逻辑
+          if (j.state === 'notification' || age < STALE_MS) next = j;
+        }
+        hookState = next;
+        var s = next ? next.state : null;
+        if (s !== lastState) {
+          lastState = s;
+          if (currentIconName === 'traebao') updateTraebaoSrc();
+        }
+      })
+      .catch(function () {
+        if (hookState) { hookState = null; lastState = null; if (currentIconName === 'traebao') updateTraebaoSrc(); }
+      });
+  }, 500);
+})();
+</script>
+<!--CLAWD-PET-POLL-END-->
