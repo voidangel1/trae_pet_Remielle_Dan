@@ -56,16 +56,6 @@ Trae Hooks（五事件）
                   └→ 按状态名切换 webp 动画
 ```
 
-皮肤素材直接替换 Trae 安装目录 `iCubeFloatingChat\...\icons\traebao\`；`main.js` 的 `qF()` 图标归一化函数打了字节级补丁（官方 3.4.2 把它硬编码成 `return "ball"`，这就是宠物被「关掉」的原因）；窗口与立绘尺寸补丁到 140px。所有改动均带回滚（`deploy-native-pet.ps1 -Restore` / 安装器卸载）。
-
-## 排坑实录（装不上先看这里）
-
-1. **hooks.json 的 JSON 结构**：每个事件必须是 `[{ "matcher": "*", "hooks": [...] }]` **数组**（工具类事件带 `matcher`），与官方 Hooks UI 生成格式一致；写成纯对象会被 Trae 原生加载器**静默丢弃**——hooks 一个都不触发，且无任何报错。
-2. **命令不能带引号**：hook 的 `command` 字段按空格切分，`"node.exe" "handler.js"` 这种带引号写法同样静默失效。本项目全部用无空格路径的无引号拼接。
-3. **hooks.json / settings.json 不能有 BOM**，否则整个文件被静默忽略。
-4. **配置只在 Trae 启动时加载**：改完 hooks.json / settings.json 必须完全重启 Trae（重载窗口无效，hook 执行器进程不会重启）。
-5. **运行 Trae 时别跑安装器写配置**：Trae 退出时可能把内存里的旧配置写回覆盖你的修改。
-
 ## Trae 升级后
 
 升级会还原 `main.js` 和官方素材 → 右键重跑 `deploy-native-pet.ps1`（或重跑安装器完整安装）即可，脚本幂等、自动刷新官方素材备份。
