@@ -30,7 +30,7 @@ Trae v3.4+ 自带一个原生悬浮宠物（TRAE Bao），但默认形象被灰�
 
 **方式一：EXE 安装器（推荐）**
 
-1. 下载 [release 里的 `ClawdPet-Setup-v2.0.exe`](release/)（约 9MB，素材全部内嵌，无需克隆仓库）
+1. 下载 [release 里的 `ClawdPet-Setup-v2.0.1.exe`](release/)（约 9MB，素材全部内嵌，无需克隆仓库）
 2. 退出 Trae（托盘右键 → 退出），双击运行
 3. 三种模式任选：
    - **完整安装**：六态 + 官方四态切换 + Hooks + 扩展 + 安装后指引
@@ -77,7 +77,7 @@ npm run convert                   # 主题 GIF → 动画 webp（改素材后重
 
 ## 分支说明
 
-- `master`：v2.0 当前版本（原生悬浮窗移植 + EXE 安装器）
+- `master`：v2.0.1 当前版本（原生悬浮窗移植 + EXE 安装器；v2.0.1 新增：自定义路径检测、无 node 时从国内镜像自动下载）
 - `old`：v1.0–1.4 独立 Electron 宠物（旧版 Trae 与独立模式用户看这里）
 
 ## 致谢

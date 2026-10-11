@@ -1,6 +1,6 @@
 {
   "name": "clawd-native-pet",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Remielle 桌宠 for Trae 原生悬浮窗（皮肤移植 / Hooks 六态 / EXE 安装器）",
   "license": "MIT",
   "scripts": {

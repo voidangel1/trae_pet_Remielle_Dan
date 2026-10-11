@@ -1,11 +1,16 @@
-// ClawdPetInstaller.cs — Remielle 桌宠 v2.0 安装器（WinForms，csc 编译，零依赖）
+// ClawdPetInstaller.cs — Remielle 桌宠 v2.0.1 安装器（WinForms，csc 编译，零依赖）
 //
 // 功能：
 //   完整安装：原生六态（Trae Hooks 驱动）+ 官方四态可切换 + 扩展 + hooks.json
 //             + 部署 hook-handler 运行时 + 安装后指引
+//             （无 node 时自动从国内镜像 npmmirror 下载 Node LTS，官方源兜底）
 //   轻量安装：仅官方四态皮肤 + 尺寸补丁（不动 floatingButton.html / 扩展 / Hooks，最稳定）
 //   卸载    ：还原官方状态——回滚 v2.0 全部补丁与素材、清理旧版本（1.0-1.4 独立宠物、
-//             扩展、hooks.json、settings.json、自启动、运行时目录）
+//             扩展、hooks.json、settings.json、自启动、运行时目录、下载的 Node）
+//
+// Trae 定位：运行中进程 → 常见位置 + 全盘符 Program Files → 注册表卸载表
+//            （大小写不敏感 + DisplayIcon 推导，覆盖任意自定义安装路径），
+//            全部失败时弹文件选择框让用户手动指认 Trae CN.exe。
 //
 // 皮肤素材 / 官方原始素材 / 扩展 / hook-handler / 轮询脚本全部嵌入 EXE 资源，
 // 单文件分发，无需携带项目目录。
@@ -17,6 +22,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Reflection;
 using System.Security.Principal;
 using System.Text;
@@ -68,7 +74,7 @@ namespace ClawdPetInstaller
 
         public MainForm()
         {
-            Text = "ClawdPet v2.0 安装器（Remielle × Trae）";
+            Text = "ClawdPet v2.0.1 安装器（Remielle × Trae）";
             Font = new Font("Microsoft YaHei UI", 9F);
             StartPosition = FormStartPosition.CenterScreen;
             ClientSize = new Size(620, 460);
@@ -148,8 +154,9 @@ namespace ClawdPetInstaller
             TraeInfo t = Installer.DetectTrae();
             if (t == null)
             {
-                lblStatus.BeginInvoke((Action)(() => lblStatus.Text = "未找到 Trae CN（请先安装 Trae CN 3.4+）"));
-                Log("[错误] 未检测到 Trae CN 安装目录。");
+                lblStatus.BeginInvoke((Action)(() => lblStatus.Text = "未找到 Trae CN（可点「安装」手动选择 Trae CN.exe 位置）"));
+                Log("[提示] 未自动检测到 Trae CN（未运行 + 非常见安装位置）。");
+                Log("           点击「安装」后会弹出文件选择框，手动指定 Trae CN.exe 即可。");
                 return;
             }
             bool patched = Installer.IsV2Installed(t);
@@ -160,14 +167,48 @@ namespace ClawdPetInstaller
             Log("检测到 Trae：" + t.BaseDir);
             Log("原生素材目录：" + t.PetDir);
             Log("当前状态：" + v2 + old);
-            string node = Installer.FindNodeExe();
-            Log(node != null ? "Hook 运行时：" + node : "[警告] 未找到 .trae-cn 内置 node（完整安装将跳过 Hooks 注册）");
+            string node = Installer.FindNodeExe() ?? Installer.FindNodeOnPath();
+            Log(node != null
+                ? "Hook 运行时：" + node
+                : "[提示] 未找到 node，完整安装时将从国内镜像（npmmirror）自动下载 Node LTS（约 30 MB）");
+        }
+
+        // 自动检测失败时让用户手动指认 Trae CN.exe（跨线程调用，转发到 UI 线程）
+        TraeInfo BrowseForTrae()
+        {
+            TraeInfo result = null;
+            var iar = BeginInvoke((Action)(() => { result = BrowseForTraeUi(); }));
+            iar.AsyncWaitHandle.WaitOne();
+            return result;
+        }
+
+        TraeInfo BrowseForTraeUi()
+        {
+            DialogResult r = MessageBox.Show(this,
+                "未自动找到 Trae CN（可能安装在非常规位置）。\n\n是否手动选择「Trae CN.exe」？",
+                "未找到 Trae", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+            if (r != DialogResult.Yes) return null;
+            using (var ofd = new OpenFileDialog
+            {
+                Title = "选择 Trae CN.exe（通常在 Trae CN 安装目录下）",
+                Filter = "Trae CN.exe|Trae CN.exe|可执行文件|*.exe",
+            })
+            {
+                if (ofd.ShowDialog(this) != DialogResult.OK) return null;
+                TraeInfo t = Installer.BuildTraeInfo(Path.GetDirectoryName(ofd.FileName));
+                if (t == null)
+                    MessageBox.Show(this,
+                        "该目录不像 Trae CN 安装目录（未找到 resources\\app\\out\\main.js）。\n请选择 Trae CN.exe 所在的安装根目录。",
+                        "无效位置", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return t;
+            }
         }
 
         void Install(bool full)
         {
             var t = Installer.DetectTrae();
-            if (t == null) { Log("[错误] 未检测到 Trae。"); return; }
+            if (t == null) t = BrowseForTrae();
+            if (t == null) { Log("[错误] 未检测到 Trae，已取消安装。"); return; }
 
             if (Installer.IsTraeRunning())
             {
@@ -300,9 +341,12 @@ namespace ClawdPetInstaller
         public static string ExtDir() { return Path.Combine(UserRoot(), ".trae-cn", "extensions"); }
 
         // ---------- Trae 检测 ----------
+        // 检测链：运行中进程 → 常见/全盘符安装位置 → 注册表卸载信息（任意自定义安装路径）。
+        // 任一环节命中后用 BuildTraeInfo 校验 main.js / 素材目录存在，防止拿到假目录。
         public static TraeInfo DetectTrae()
         {
             string baseDir = null;
+            // 1) 运行中的 Trae（最准）
             var procs = Process.GetProcessesByName("Trae CN");
             foreach (var p in procs)
             {
@@ -310,22 +354,46 @@ namespace ClawdPetInstaller
                 catch { }
                 break;
             }
+            // 2) 常见位置 + 所有盘符的 Program Files（覆盖 D:\Program Files\Trae CN 等自定义盘安装）
             if (baseDir == null)
             {
-                foreach (var guess in new[]
+                var guesses = new List<string>
                 {
                     Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Trae CN"),
                     Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Trae CN"),
                     Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "Trae CN"),
-                })
-                    if (Directory.Exists(guess)) { baseDir = guess; break; }
-            }
-            if (baseDir == null)
-            {
+                };
                 try
                 {
-                    foreach (var root in new[] { Registry.LocalMachine, Registry.CurrentUser })
-                        using (var k = root.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"))
+                    foreach (string drive in Environment.GetLogicalDrives())
+                    {
+                        guesses.Add(Path.Combine(drive, "Program Files", "Trae CN"));
+                        guesses.Add(Path.Combine(drive, "Program Files (x86)", "Trae CN"));
+                    }
+                }
+                catch { }
+                foreach (var guess in guesses)
+                    if (Directory.Exists(guess) && BuildTraeInfo(guess) != null) { baseDir = guess; break; }
+            }
+            // 3) 注册表卸载表（Trae 用 Inno Setup 安装，DisplayName 实际是 "TRAE CN (User)"，
+            //    大小写不敏感匹配 + WOW6432Node + DisplayIcon 推导）
+            if (baseDir == null) baseDir = FindTraeInRegistry();
+            if (baseDir == null) return null;
+            return BuildTraeInfo(baseDir);
+        }
+
+        static string FindTraeInRegistry()
+        {
+            try
+            {
+                foreach (var root in new[] { Registry.LocalMachine, Registry.CurrentUser })
+                    foreach (string wow in new[]
+                    {
+                        @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+                        @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
+                    })
+                    {
+                        using (var k = root.OpenSubKey(wow))
                         {
                             if (k == null) continue;
                             foreach (var sub in k.GetSubKeyNames())
@@ -333,21 +401,30 @@ namespace ClawdPetInstaller
                                 using (var sk = k.OpenSubKey(sub))
                                 {
                                     if (sk == null) continue;
-                                    object name = sk.GetValue("DisplayName");
-                                    if (name != null && name.ToString().Contains("Trae CN"))
+                                    string name = (sk.GetValue("DisplayName") ?? "").ToString();
+                                    if (name.IndexOf("trae", StringComparison.OrdinalIgnoreCase) < 0) continue;
+                                    // InstallLocation 优先；缺失/失效时从 DisplayIcon（指向 Trae CN.exe）推导
+                                    string dir = sk.GetValue("InstallLocation") as string;
+                                    if (string.IsNullOrWhiteSpace(dir) || !Directory.Exists(dir))
                                     {
-                                        object loc = sk.GetValue("InstallLocation");
-                                        string s = loc as string;
-                                        if (s != null && Directory.Exists(s)) { baseDir = s; break; }
+                                        string icon = (sk.GetValue("DisplayIcon") ?? "").ToString().Split(',')[0].Trim('"').Trim();
+                                        if (icon.Length > 0 && File.Exists(icon)) dir = Path.GetDirectoryName(icon);
                                     }
+                                    if (!string.IsNullOrWhiteSpace(dir) && Directory.Exists(dir) && BuildTraeInfo(dir) != null)
+                                        return dir;
                                 }
                             }
-                            if (baseDir != null) break;
                         }
-                }
-                catch { }
+                    }
             }
-            if (baseDir == null) return null;
+            catch { }
+            return null;
+        }
+
+        // 从安装根目录构造 TraeInfo（目录不完整时返回 null，供多级回退校验）
+        public static TraeInfo BuildTraeInfo(string baseDir)
+        {
+            if (string.IsNullOrEmpty(baseDir)) return null;
             var t = new TraeInfo
             {
                 BaseDir = baseDir,
@@ -374,6 +451,9 @@ namespace ClawdPetInstaller
             return Directory.Exists(ExtDir()) && Directory.EnumerateDirectories(ExtDir(), "remielle.trae-pet-bridge-*").Any();
         }
 
+        // ---------- Node 运行时（Hook 执行器） ----------
+        // 查找顺序：Trae 托管 node → 系统 PATH → 上次下载的副本 → 国内镜像自动下载安装
+        // （Trae 的 binaries\node 只在用户触发过某功能后才下载，全新环境往往没有）
         public static string FindNodeExe()
         {
             string baseDir = Path.Combine(UserRoot(), ".trae-cn", "binaries", "node", "versions");
@@ -383,6 +463,158 @@ namespace ClawdPetInstaller
             {
                 string node = Path.Combine(d, "node.exe");
                 if (File.Exists(node)) return node;
+            }
+            return null;
+        }
+
+        public static string FindNodeOnPath()
+        {
+            try
+            {
+                string pathEnv = Environment.GetEnvironmentVariable("PATH") ?? "";
+                foreach (string dir in pathEnv.Split(';'))
+                {
+                    if (string.IsNullOrWhiteSpace(dir)) continue;
+                    try
+                    {
+                        string p = Path.Combine(dir.Trim(), "node.exe");
+                        if (File.Exists(p)) return p;
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        // 完整安装时调用：保证有一个可用的 node.exe，没有就从国内镜像装一个
+        public static string EnsureNodeExe(Action<string> log)
+        {
+            string node = FindNodeExe();
+            if (node != null) { log("[OK] 使用 Trae 内置 node：" + node); return node; }
+
+            node = FindNodeOnPath();
+            if (node != null) { log("[OK] 使用系统 node：" + node); return node; }
+
+            node = Path.Combine(RuntimeDir(), "node", "node.exe");
+            if (File.Exists(node)) { log("[OK] 使用已下载的 node：" + node); return node; }
+
+            log("未找到可用 node，开始从国内镜像（npmmirror）下载 Node LTS ...");
+            return DownloadNode(log);
+        }
+
+        // Node LTS（Krypton）；hook-handler 只用 net/fs/path 基础模块，任何 LTS 均可。
+        // 源顺序：npmmirror（原淘宝镜像，国内直连）→ 官方 nodejs.org 兜底。
+        const string NodeLtsVersion = "24.21.0";
+
+        static string DownloadNode(Action<string> log)
+        {
+            // npmmirror / nodejs.org 均要求 TLS 1.2+（.NET 4.0 枚举缺失，用数值强转）
+            ServicePointManager.SecurityProtocol = (SecurityProtocolType)3072 | (SecurityProtocolType)768 | SecurityProtocolType.Tls;
+
+            string arch = Environment.Is64BitOperatingSystem ? "x64" : "x86";
+            string zipName = string.Format("node-v{0}-win-{1}.zip", NodeLtsVersion, arch);
+            string[] sources =
+            {
+                "https://cdn.npmmirror.com/binaries/node/v" + NodeLtsVersion + "/" + zipName,
+                "https://npmmirror.com/mirrors/node/v" + NodeLtsVersion + "/" + zipName,
+                "https://nodejs.org/dist/v" + NodeLtsVersion + "/" + zipName,
+            };
+
+            string downloadDir = Path.Combine(RuntimeDir(), "downloads");
+            string zipPath = Path.Combine(downloadDir, zipName);
+            Directory.CreateDirectory(downloadDir);
+
+            bool ok = false;
+            foreach (string url in sources)
+            {
+                try
+                {
+                    log("[下载] " + url);
+                    DownloadFile(url, zipPath, log);
+                    ok = true;
+                    break;
+                }
+                catch (Exception e) { log("[警告] 下载失败（" + e.Message + "），尝试下一个源 ..."); }
+            }
+            if (!ok) { try { File.Delete(zipPath); } catch { } return null; }
+
+            // 校验 zip 魔数（源返回错误页时不是 zip）
+            try
+            {
+                using (var fs = File.OpenRead(zipPath))
+                    if (fs.ReadByte() != 'P' || fs.ReadByte() != 'K')
+                        throw new Exception("下载内容不是有效的 zip 文件");
+            }
+            catch (Exception e)
+            {
+                log("[警告] Node 安装包校验失败：" + e.Message);
+                try { File.Delete(zipPath); } catch { }
+                return null;
+            }
+
+            // 解压（zip 内含顶层目录 node-vX-win-x64\），并把该目录上提为 node\
+            try
+            {
+                string nodeDir = Path.Combine(RuntimeDir(), "node");
+                if (Directory.Exists(nodeDir)) Directory.Delete(nodeDir, true);
+                string tmp = Path.Combine(downloadDir, "extract");
+                if (Directory.Exists(tmp)) Directory.Delete(tmp, true);
+                System.IO.Compression.ZipFile.ExtractToDirectory(zipPath, tmp);
+                string nodeExe = FindFileRecursive(tmp, "node.exe");
+                if (nodeExe == null) throw new Exception("压缩包内未找到 node.exe");
+                string srcDir = Path.GetDirectoryName(nodeExe);
+                Directory.Move(srcDir, nodeDir);
+                if (!string.Equals(srcDir, tmp, StringComparison.OrdinalIgnoreCase))
+                    try { Directory.Delete(tmp, true); } catch { }
+                try { File.Delete(zipPath); } catch { }
+                log("[OK] Node v" + NodeLtsVersion + " 已安装到 " + nodeDir);
+                return Path.Combine(nodeDir, "node.exe");
+            }
+            catch (Exception e)
+            {
+                log("[警告] Node 解压失败：" + e.Message);
+                return null;
+            }
+        }
+
+        static void DownloadFile(string url, string dst, Action<string> log)
+        {
+            var req = (HttpWebRequest)WebRequest.Create(url);
+            req.UserAgent = "ClawdPetInstaller/2.0.1";
+            req.AllowAutoRedirect = true;
+            req.Timeout = 30000;
+            req.ReadWriteTimeout = 60000;
+            using (var resp = req.GetResponse())
+            using (var s = resp.GetResponseStream())
+            using (var f = File.Create(dst))
+            {
+                long total = resp.ContentLength, done = 0, last = 0;
+                byte[] buf = new byte[64 * 1024];
+                int n;
+                while ((n = s.Read(buf, 0, buf.Length)) > 0)
+                {
+                    f.Write(buf, 0, n);
+                    done += n;
+                    if (total > 0 && done - last >= 5 * 1024 * 1024) // 每 5MB 报一次进度
+                    {
+                        log(string.Format("  已下载 {0:F1} / {1:F1} MB", done / 1048576.0, total / 1048576.0));
+                        last = done;
+                    }
+                }
+                if (total > 0 && done != total) throw new Exception("下载不完整");
+                log(string.Format("  下载完成（{0:F1} MB）", done / 1048576.0));
+            }
+        }
+
+        static string FindFileRecursive(string dir, string file)
+        {
+            string p = Path.Combine(dir, file);
+            if (File.Exists(p)) return p;
+            foreach (string d in Directory.GetDirectories(dir))
+            {
+                string r = FindFileRecursive(d, file);
+                if (r != null) return r;
             }
             return null;
         }
@@ -460,21 +692,26 @@ namespace ClawdPetInstaller
 
         public static void InstallExtension(string runtime, Action<string> log)
         {
-            string dst = Path.Combine(ExtDir(), "remielle.trae-pet-bridge-2.0.0");
+            string dst = Path.Combine(ExtDir(), "remielle.trae-pet-bridge-2.0.1");
             Directory.CreateDirectory(ExtDir());
-            // 清掉旧版本目录（0.x/2.0.0）
+            // 清掉旧版本目录（0.x/2.0.0 及更早）
             foreach (string old in Directory.EnumerateDirectories(ExtDir(), "remielle.trae-pet-bridge-*"))
                 try { Directory.Delete(old, true); } catch { }
             Directory.CreateDirectory(dst);
             ExtractResource("ext_extension.js", Path.Combine(dst, "extension.js"));
             ExtractResource("ext_package.json", Path.Combine(dst, "package.json"));
-            log("[OK] 桥接扩展已安装（remielle.trae-pet-bridge-2.0.0）");
+            log("[OK] 桥接扩展已安装（remielle.trae-pet-bridge-2.0.1）");
         }
 
         public static void RegisterHooks(string runtime, Action<string> log)
         {
-            string node = FindNodeExe();
-            if (node == null) { log("[警告] 未找到内置 node，跳过 Hooks 注册（宠物将只有官方四态）。"); return; }
+            // node 缺失不再跳过：PATH 有就用系统的，否则从国内镜像（npmmirror）自动下载一份
+            string node = EnsureNodeExe(log);
+            if (node == null)
+            {
+                log("[警告] 无法获得 Node 运行时（内置/系统/在线下载均失败），跳过 Hooks 注册（宠物将只有官方四态）。");
+                return;
+            }
             string handler = Path.Combine(runtime, "hook-handler.js").Replace("\\", "/");
             string hooksFile = HooksJson();
             Directory.CreateDirectory(Path.GetDirectoryName(hooksFile));

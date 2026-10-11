@@ -1,6 +1,6 @@
 ﻿# build-installer.ps1 — 编译 ClawdPet 安装器 EXE（csc，零第三方依赖）
 #
-# 产出: ..\release\ClawdPet-Setup-v2.0.exe（单文件，素材/扩展/脚本全部嵌入）
+# 产出: ..\release\ClawdPet-Setup-v2.0.1.exe（单文件，素材/扩展/脚本全部嵌入）
 # 前置: native-pet\assets\*.webp（皮肤 8 张 + official-backup 官方 4 张）已生成
 #       （运行 native-pet\convert-native-pet.js；官方备份来自首次部署）
 param(
@@ -10,7 +10,7 @@ $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $root = Split-Path -Parent $here
 $build = Join-Path $here 'build'
-if (-not $Output) { $Output = Join-Path (Join-Path $root 'release') 'ClawdPet-Setup-v2.0.exe' }
+if (-not $Output) { $Output = Join-Path (Join-Path $root 'release') 'ClawdPet-Setup-v2.0.1.exe' }
 
 # ---------- 1. 暂存资源（统一命名） ----------
 Remove-Item $build -Recurse -Force -ErrorAction SilentlyContinue
@@ -61,6 +61,7 @@ $argv = @(
     '/r:System.dll', '/r:System.Core.dll',
     '/r:System.Windows.Forms.dll', '/r:System.Drawing.dll',
     '/r:System.Web.Extensions.dll',
+    '/r:System.IO.Compression.dll', '/r:System.IO.Compression.FileSystem.dll',  # Node zip 解压（.NET 4.5+ 自带）
     $srcFile
 ) + $resources
 

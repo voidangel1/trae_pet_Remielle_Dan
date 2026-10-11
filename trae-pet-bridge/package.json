@@ -2,7 +2,7 @@
   "name": "trae-pet-bridge",
   "displayName": "Trae Pet Bridge",
   "description": "把 Trae 的编码事件（输入、切换文件、任务、调试、诊断错误）推送给桌面宠物",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "publisher": "remielle",
   "engines": {
     "vscode": "^1.75.0"
