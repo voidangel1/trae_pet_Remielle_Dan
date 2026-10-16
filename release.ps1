@@ -1,10 +1,10 @@
 # ClawdPet 发布打包脚本
 # 用法: 在项目根目录运行 .\release.ps1
-# 会生成 release\ClawdPet-v2.0.1.zip，可直接发给他人
+# 会生成 release\ClawdPet-v2.0.2.zip，可直接发给他人
 $ErrorActionPreference = "Stop"
 $projectDir = $PSScriptRoot
 $releaseDir = Join-Path $projectDir "release"
-$releaseName = "ClawdPet-v2.0.1"
+$releaseName = "ClawdPet-v2.0.2"
 $stagingDir = Join-Path $releaseDir $releaseName
 
 Write-Host "=== ClawdPet 发布打包 ===" -ForegroundColor Cyan
@@ -63,7 +63,7 @@ Write-Host "  → native-pet（8 张皮肤 webp + 部署/转换脚本）" -Foreg
 # 2.7 打包 EXE 安装器（v2.0 新增：双模式安装 + 全版本卸载还原）
 # ============================================================
 Write-Host "`n[2.7/5] 打包 EXE 安装器..." -ForegroundColor Yellow
-$setupExe = Join-Path $releaseDir "ClawdPet-Setup-v2.0.1.exe"
+$setupExe = Join-Path $releaseDir "ClawdPet-Setup-v2.0.2.exe"
 # 安装器源或皮肤有更新时重新编译（无改动时直接复用）
 $installerSrc = Join-Path $projectDir "installer\ClawdPetInstaller.cs"
 $needsBuild = -not (Test-Path $setupExe)
@@ -85,7 +85,7 @@ if ($needsBuild) {
 Copy-Item $setupExe (Join-Path $releaseDir "tmp-setup.exe") -Force  # 仅用于体积显示
 Remove-Item (Join-Path $releaseDir "tmp-setup.exe") -Force
 $setupSize = [math]::Round((Get-Item $setupExe).Length / 1MB, 1)
-Write-Host "  → ClawdPet-Setup-v2.0.1.exe（$setupSize MB，已生成在 release\ 下，单文件可直接分发）" -ForegroundColor Green
+Write-Host "  → ClawdPet-Setup-v2.0.2.exe（$setupSize MB，已生成在 release\ 下，单文件可直接分发）" -ForegroundColor Green
 
 # ============================================================
 # 3. 复制安装脚本和配置
@@ -123,7 +123,7 @@ Write-Host @"
 
 给他人安装（两种方式任选）:
   ★ EXE 安装器（推荐，单文件，无需解压）:
-    直接发送 release\ClawdPet-Setup-v2.0.1.exe
+    直接发送 release\ClawdPet-Setup-v2.0.2.exe
     → 完整安装：Hooks 六态 + 官方四态切换 + 安装后指引
     → 轻量安装：仅官方四态皮肤（不动悬浮窗页面/Hooks，最稳定）
     → 卸载：v2.0 + 旧版 1.0-1.4 全部还原官方

@@ -1,4 +1,4 @@
-// ClawdPetInstaller.cs — Remielle 桌宠 v2.0.1 安装器（WinForms，csc 编译，零依赖）
+// ClawdPetInstaller.cs — Remielle 桌宠 v2.0.2 安装器（WinForms，csc 编译，零依赖）
 //
 // 功能：
 //   完整安装：原生六态（Trae Hooks 驱动）+ 官方四态可切换 + 扩展 + hooks.json
@@ -74,7 +74,7 @@ namespace ClawdPetInstaller
 
         public MainForm()
         {
-            Text = "ClawdPet v2.0.1 安装器（Remielle × Trae）";
+            Text = "ClawdPet v2.0.2 安装器（Remielle × Trae）";
             Font = new Font("Microsoft YaHei UI", 9F);
             StartPosition = FormStartPosition.CenterScreen;
             ClientSize = new Size(620, 460);
@@ -315,6 +315,20 @@ namespace ClawdPetInstaller
         const string XfGate = "XF={ball:60,traebao:100}";
         const string XfPatch = "XF={ball:60,traebao:140}";
         const string XfLegacy = "XF={ball:60,traebao:180}";
+        // Trae 3.5（2026-10 重构）：qF gate 改名 tB（function tB(t){return"ball"}，语义未变，
+        // 强制归一为 ball 并写回 settings），尺寸表 XF 改名 oB —— 新旧锚点都打，升级后重跑安装器即可恢复
+        const string ObGate = "oB={ball:60,traebao:100}";
+        const string ObPatch = "oB={ball:60,traebao:140}";
+        const string TbGate = "function tB(t){return\"ball\"}";
+        const string TbPatch = "function tB(t){return t===\"ball\"?\"ball\":\"traebao\"}";
+        // 拖拽修复：非 16:9 屏（16:10/3:2 等）Windows 默认缩放 125%/150%，高 DPI 下 renderer 的
+        // e.screenX 与主进程 DIP 坐标错位 → 拖动时窗口加速跑离鼠标（"宠物自行反向移动"），
+        // 鼠标甩出窗口后 mouseup 丢失 → 拖拽状态残留 → 松开后点击失灵。
+        // 补丁：drag-move 改用 screen.getCursorScreenPoint() 主进程权威 DIP 坐标。
+        // em 为 bundle 中混淆的 screen 模块（同文件有 em.getDisplayNearestPoint），跨版本改名时
+        // ReferenceError 被 catch 吞掉、退回原始坐标，仅失去修复不引入新问题。
+        const string DragGate = "an.on(\"icube-floating-chat:drag-move\",(e,i,r)=>{";
+        const string DragPatch = "an.on(\"icube-floating-chat:drag-move\",(e,i,r)=>{try{const __cp=em.getCursorScreenPoint();i=__cp.x;r=__cp.y}catch(__e){}";
         const string CssBtnGate = ".icon-traebao .btn {\n\twidth: 100px;\n\theight: 100px;\n}";
         const string CssBtnPatch = ".icon-traebao .btn {\n\twidth: 140px;\n\theight: 140px;\n}";
         const string CssBtnLegacy = ".icon-traebao .btn {\n\twidth: 180px;\n\theight: 180px;\n}";
@@ -443,7 +457,12 @@ namespace ClawdPetInstaller
 
         public static bool IsV2Installed(TraeInfo t)
         {
-            try { return File.ReadAllText(t.MainJs).Contains(QPatch); } catch { return false; }
+            try
+            {
+                string main = File.ReadAllText(t.MainJs);
+                return main.Contains(XfPatch) || main.Contains(ObPatch);
+            }
+            catch { return false; }
         }
 
         public static bool HasExtension()
@@ -581,7 +600,7 @@ namespace ClawdPetInstaller
         static void DownloadFile(string url, string dst, Action<string> log)
         {
             var req = (HttpWebRequest)WebRequest.Create(url);
-            req.UserAgent = "ClawdPetInstaller/2.0.1";
+            req.UserAgent = "ClawdPetInstaller/2.0.2";
             req.AllowAutoRedirect = true;
             req.Timeout = 30000;
             req.ReadWriteTimeout = 60000;
@@ -633,11 +652,14 @@ namespace ClawdPetInstaller
         // ---------- 安装：素材 + main.js/html 补丁 ----------
         public static void InstallSkin(TraeInfo t, Action<string> log, bool full)
         {
-            // 官方素材首次备份（当前未打过补丁时才备份，防止把我们的皮肤备份进去）
-            bool already = File.ReadAllText(t.MainJs).Contains(QPatch);
+            // 官方素材首次备份：未打过补丁且本地还没有完整备份时才备份
+            // （防两个坑：把我们的皮肤误存成"官方备份"；重复备份把还原基线覆盖掉）
+            string mainText = File.ReadAllText(t.MainJs);
+            bool already = mainText.Contains(QPatch) || mainText.Contains(XfPatch) || mainText.Contains(ObPatch);
             string backup = Path.Combine(RuntimeDir(), "official-backup");
             Directory.CreateDirectory(backup);
-            if (!already)
+            bool backupComplete = Array.TrueForAll(OfficialFiles, f => File.Exists(Path.Combine(backup, f)));
+            if (!already && !backupComplete)
             {
                 foreach (string f in OfficialFiles)
                 {
@@ -662,12 +684,18 @@ namespace ClawdPetInstaller
                 log("[OK] 官方四态皮肤已替换（" + SkinFiles.Length + " 张）");
             }
 
-            // main.js：qF 解锁 + 尺寸（先归一化旧版再打，幂等）
-            string main = File.ReadAllText(t.MainJs);
-            main = NormalizeMain(main);
-            main = main.Replace(QGate, QPatch).Replace(XfGate, XfPatch);
-            File.WriteAllText(t.MainJs, main);
-            log("[OK] main.js 补丁：qF 解锁（traebao 形象）+ 窗口 140px");
+            // main.js：形象/尺寸补丁（先归一化旧版再打，幂等）。
+            // 旧版（≤3.4）：qF gate + XF 尺寸表；新版（3.5+，2026-10）：gate 改名 tB、尺寸表改名 oB
+            // —— 两套锚点都尝试，各自命中才生效。
+            mainText = NormalizeMain(mainText);
+            mainText = mainText.Replace(QGate, QPatch).Replace(TbGate, TbPatch)
+                               .Replace(XfGate, XfPatch).Replace(ObGate, ObPatch)
+                               .Replace(DragGate, DragPatch);
+            File.WriteAllText(t.MainJs, mainText);
+            bool newAnchor = mainText.Contains(ObPatch);
+            bool dragFixed = mainText.Contains("__cp=em.getCursorScreenPoint()");
+            log((newAnchor ? "[OK] main.js 补丁：tB gate 解锁 + 窗口 140px（3.5 新锚点）" : "[OK] main.js 补丁：qF 解锁（traebao 形象）+ 窗口 140px")
+                + (dragFixed ? " + 拖拽高 DPI 修复" : ""));
 
             // floatingButton.html：CSS 尺寸（两种模式都改）
             if (File.Exists(t.ButtonHtml))
@@ -692,7 +720,7 @@ namespace ClawdPetInstaller
 
         public static void InstallExtension(TraeInfo t, string runtime, Action<string> log)
         {
-            string dst = Path.Combine(ExtDir(), "remielle.trae-pet-bridge-2.0.1");
+            string dst = Path.Combine(ExtDir(), "remielle.trae-pet-bridge-2.0.2");
 
             // 首选：VSIX + Trae CLI 官方安装流程。直接往 extensions 目录拷贝的"旁载"方式
             // 已被 Trae CN 封锁：启动扫描时对未注册目录执行 "Marked extension as removed"，
@@ -701,7 +729,7 @@ namespace ClawdPetInstaller
             if (t != null && TryInstallViaCli(t, log))
             {
                 CleanObsolete(log);
-                log("[OK] 桥接扩展已通过 Trae CLI 安装注册（remielle.trae-pet-bridge-2.0.1）");
+                log("[OK] 桥接扩展已通过 Trae CLI 安装注册（remielle.trae-pet-bridge-2.0.2）");
                 return;
             }
 
@@ -744,7 +772,7 @@ namespace ClawdPetInstaller
                 };
                 psi.EnvironmentVariables["ELECTRON_RUN_AS_NODE"] = "1";
                 psi.EnvironmentVariables.Remove("VSCODE_DEV");          // 与 bin\trae-cn.cmd 行为一致
-                log("[安装] Trae CLI：注册扩展 remielle.trae-pet-bridge-2.0.1 ...");
+                log("[安装] Trae CLI：注册扩展 remielle.trae-pet-bridge-2.0.2 ...");
                 using (var p = Process.Start(psi))
                 {
                     string output = p.StandardOutput.ReadToEnd();
@@ -788,7 +816,7 @@ namespace ClawdPetInstaller
         // 用嵌入资源现场打包 VSIX（zip 结构：extension.vsixmanifest + [Content_Types].xml + extension/*）
         static string BuildVsix()
         {
-            string vsix = Path.Combine(RuntimeDir(), "downloads", "trae-pet-bridge-2.0.1.vsix");
+            string vsix = Path.Combine(RuntimeDir(), "downloads", "trae-pet-bridge-2.0.2.vsix");
             Directory.CreateDirectory(Path.GetDirectoryName(vsix));
             using (var zip = System.IO.Compression.ZipFile.Open(vsix, System.IO.Compression.ZipArchiveMode.Create))
             {
@@ -822,7 +850,7 @@ namespace ClawdPetInstaller
             "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" +
             "<PackageManifest Version=\"2.0.0\" xmlns=\"http://schemas.microsoft.com/developer/vsx-schema/2011\">\n" +
             "  <Metadata>\n" +
-            "    <Identity Language=\"en-US\" Id=\"trae-pet-bridge\" Version=\"2.0.1\" Publisher=\"remielle\"/>\n" +
+            "    <Identity Language=\"en-US\" Id=\"trae-pet-bridge\" Version=\"2.0.2\" Publisher=\"remielle\"/>\n" +
             "    <DisplayName>Trae Pet Bridge</DisplayName>\n" +
             "    <Description xml:space=\"preserve\">Push Trae coding events to desktop pet</Description>\n" +
             "    <Properties>\n" +
@@ -1161,10 +1189,13 @@ namespace ClawdPetInstaller
             else log("[跳过] 保留旧版宠物目录：" + candidate);
         }
 
-        // ---------- 补丁归一化（部署/卸载共用，幂等且兼容 180px 旧版） ----------
+        // ---------- 补丁归一化（部署/卸载共用，幂等且兼容 180px 旧版与 3.5+ tB/oB/拖拽锚点） ----------
         static string NormalizeMain(string s)
         {
-            return s.Replace(QPatch, QGate).Replace(XfPatch, XfGate).Replace(XfLegacy, XfGate);
+            return s.Replace(QPatch, QGate).Replace(TbPatch, TbGate)
+                    .Replace(XfPatch, XfGate).Replace(XfLegacy, XfGate)
+                    .Replace(ObPatch, ObGate)
+                    .Replace(DragPatch, DragGate);
         }
 
         static string NormalizeHtml(string s, bool removePoll)

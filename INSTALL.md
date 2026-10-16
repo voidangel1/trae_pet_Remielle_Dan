@@ -1,13 +1,13 @@
 # 安装与使用说明
 
-Remielle 桌宠 v2.0.1 —— 移植进 Trae 原生悬浮窗，零独立进程，随 Trae 启停。
+Remielle 桌宠 v2.0.2 —— 移植进 Trae 原生悬浮窗，零独立进程，随 Trae 启停。
 
 支持：Trae CN / Trae 国际版 v3.4+，Windows 10/11。
 
 ## 一、安装（EXE 安装器，推荐）
 
 1. 退出 Trae（托盘图标右键 → 退出，**完全退出**）。
-2. 双击 `ClawdPet-Setup-v2.0.1.exe`（约 9MB 单文件，素材全部内嵌，无需其他准备）。
+2. 双击 `ClawdPet-Setup-v2.0.2.exe`（约 9MB 单文件，素材全部内嵌，无需其他准备）。
 3. 按需选择：
    - **完整安装**：Hooks 六态 + 官方四态切换 + 桥接扩展 + Hooks 注册 + 安装后指引。
    - **轻量安装**：只替换官方四态皮肤与尺寸补丁，不碰 Hooks 与悬浮窗页面（最稳）。
@@ -67,6 +67,6 @@ Remielle 桌宠 v2.0.1 —— 移植进 Trae 原生悬浮窗，零独立进程�
 
 ## 五、给发布者的说明
 
-- 主分发物：`release\ClawdPet-Setup-v2.0.1.exe`（`installer\build-installer.ps1` 或 `release.ps1` 构建）。
+- 主分发物：`release\ClawdPet-Setup-v2.0.2.exe`（`installer\build-installer.ps1` 或 `release.ps1` 构建）。
 - `release.ps1` 同时产出 zip（皮肤 + 部署脚本 + 文档），适合脚本方式使用。
 - 仓库须包含：`installer\`、`native-pet\`（含 8 张 webp）、`trae-pet-bridge\`、`hook-handler.js`、主题目录——安装器构建时从这些位置嵌入资源。
