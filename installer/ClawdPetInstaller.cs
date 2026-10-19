@@ -1,4 +1,4 @@
-// ClawdPetInstaller.cs — Remielle 桌宠 v2.0.2 安装器（WinForms，csc 编译，零依赖）
+// ClawdPetInstaller.cs — Remielle 桌宠 v2.0.3 安装器（WinForms，csc 编译，零依赖）
 //
 // 功能：
 //   完整安装：原生六态（Trae Hooks 驱动）+ 官方四态可切换 + 扩展 + hooks.json
@@ -26,6 +26,7 @@ using System.Net;
 using System.Reflection;
 using System.Security.Principal;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Web.Script.Serialization;
 using Microsoft.Win32;
@@ -74,7 +75,7 @@ namespace ClawdPetInstaller
 
         public MainForm()
         {
-            Text = "ClawdPet v2.0.2 安装器（Remielle × Trae）";
+            Text = "ClawdPet v2.0.3 安装器（Remielle × Trae）";
             Font = new Font("Microsoft YaHei UI", 9F);
             StartPosition = FormStartPosition.CenterScreen;
             ClientSize = new Size(620, 460);
@@ -310,25 +311,25 @@ namespace ClawdPetInstaller
     static class Installer
     {
         // ---- 补丁锚点（与 deploy-step-main.ps1 完全一致） ----
-        const string QGate = "function qF(t){return\"ball\"}";
-        const string QPatch = "function qF(t){return t===\"ball\"?\"ball\":\"traebao\"}";
-        const string XfGate = "XF={ball:60,traebao:100}";
-        const string XfPatch = "XF={ball:60,traebao:140}";
-        const string XfLegacy = "XF={ball:60,traebao:180}";
-        // Trae 3.5（2026-10 重构）：qF gate 改名 tB（function tB(t){return"ball"}，语义未变，
-        // 强制归一为 ball 并写回 settings），尺寸表 XF 改名 oB —— 新旧锚点都打，升级后重跑安装器即可恢复
-        const string ObGate = "oB={ball:60,traebao:100}";
-        const string ObPatch = "oB={ball:60,traebao:140}";
-        const string TbGate = "function tB(t){return\"ball\"}";
-        const string TbPatch = "function tB(t){return t===\"ball\"?\"ball\":\"traebao\"}";
-        // 拖拽修复：非 16:9 屏（16:10/3:2 等）Windows 默认缩放 125%/150%，高 DPI 下 renderer 的
-        // e.screenX 与主进程 DIP 坐标错位 → 拖动时窗口加速跑离鼠标（"宠物自行反向移动"），
-        // 鼠标甩出窗口后 mouseup 丢失 → 拖拽状态残留 → 松开后点击失灵。
-        // 补丁：drag-move 改用 screen.getCursorScreenPoint() 主进程权威 DIP 坐标。
-        // em 为 bundle 中混淆的 screen 模块（同文件有 em.getDisplayNearestPoint），跨版本改名时
-        // ReferenceError 被 catch 吞掉、退回原始坐标，仅失去修复不引入新问题。
-        const string DragGate = "an.on(\"icube-floating-chat:drag-move\",(e,i,r)=>{";
-        const string DragPatch = "an.on(\"icube-floating-chat:drag-move\",(e,i,r)=>{try{const __cp=em.getCursorScreenPoint();i=__cp.x;r=__cp.y}catch(__e){}";
+        // v2.0.3：Trae 每个版本都会重命名混淆变量（qF/XF/an → tB/oB → 3.4.4 的 TB/PB/sn），
+        // 硬编码锚点每次升级必失效（v2.0.2 的 tB/oB 在 3.4.4 上即失配），现改为按代码结构
+        // 正则匹配，不依赖具体变量名；electron screen 别名在打拖拽补丁时动态探测。
+        //   gate  形象开关：  function X(t){return"ball"} → function X(t){return t==="ball"?"ball":"traebao"}
+        //   size  尺寸表：    X={ball:60,traebao:100} → X={ball:60,traebao:140}
+        //   drag  拖拽修复：  X.on("icube-floating-chat:drag-move",(e,i,r)=>{ → 主进程权威光标坐标
+        const string ReGateGate  = @"function (\w+)\((\w)\)\{return""ball""\}";
+        const string ReGatePatch = "function $1($2){return $2===\"ball\"?\"ball\":\"traebao\"}";
+        const string ReGateNorm  = @"function (\w+)\(\w\)\{return \w+===""ball""\?""ball"":""traebao""\}";
+        const string ReGateOrig  = "function $1(t){return\"ball\"}";
+        const string ReSizeGate  = @"(\w+)=\{ball:60,traebao:100\}";
+        const string ReSizePatch = "$1={ball:60,traebao:140}";
+        const string ReSizeNorm  = @"(\w+)=\{ball:60,traebao:(?:140|180)\}";   // 含 v2.0 早期 180px 版
+        const string ReSizeOrig  = "$1={ball:60,traebao:100}";
+        const string ReDragGate  = @"(\w+)\.on\(""icube-floating-chat:drag-move"",\((\w+),(\w+),(\w+)\)=>\{";
+        const string ReDragNorm  = @"\.on\(""icube-floating-chat:drag-move"",\((\w+),(\w+),(\w+)\)=>\{try\{const __cp=\w+\.getCursorScreenPoint\(\);\2=__cp\.x;\3=__cp\.y\}catch\(__e\)\{\}";
+        const string ReDragOrig  = ".on(\"icube-floating-chat:drag-move\",($1,$2,$3)=>{";
+        // 已打补丁的判定（IsV2Installed / 备份跳过共用）
+        const string ReSizeDone  = "{ball:60,traebao:140}";
         const string CssBtnGate = ".icon-traebao .btn {\n\twidth: 100px;\n\theight: 100px;\n}";
         const string CssBtnPatch = ".icon-traebao .btn {\n\twidth: 140px;\n\theight: 140px;\n}";
         const string CssBtnLegacy = ".icon-traebao .btn {\n\twidth: 180px;\n\theight: 180px;\n}";
@@ -460,7 +461,7 @@ namespace ClawdPetInstaller
             try
             {
                 string main = File.ReadAllText(t.MainJs);
-                return main.Contains(XfPatch) || main.Contains(ObPatch);
+                return Regex.IsMatch(main, ReGateNorm) || main.Contains(ReSizeDone);
             }
             catch { return false; }
         }
@@ -600,7 +601,7 @@ namespace ClawdPetInstaller
         static void DownloadFile(string url, string dst, Action<string> log)
         {
             var req = (HttpWebRequest)WebRequest.Create(url);
-            req.UserAgent = "ClawdPetInstaller/2.0.2";
+            req.UserAgent = "ClawdPetInstaller/2.0.3";
             req.AllowAutoRedirect = true;
             req.Timeout = 30000;
             req.ReadWriteTimeout = 60000;
@@ -655,7 +656,7 @@ namespace ClawdPetInstaller
             // 官方素材首次备份：未打过补丁且本地还没有完整备份时才备份
             // （防两个坑：把我们的皮肤误存成"官方备份"；重复备份把还原基线覆盖掉）
             string mainText = File.ReadAllText(t.MainJs);
-            bool already = mainText.Contains(QPatch) || mainText.Contains(XfPatch) || mainText.Contains(ObPatch);
+            bool already = Regex.IsMatch(mainText, ReGateNorm) || mainText.Contains(ReSizeDone);
             string backup = Path.Combine(RuntimeDir(), "official-backup");
             Directory.CreateDirectory(backup);
             bool backupComplete = Array.TrueForAll(OfficialFiles, f => File.Exists(Path.Combine(backup, f)));
@@ -684,18 +685,16 @@ namespace ClawdPetInstaller
                 log("[OK] 官方四态皮肤已替换（" + SkinFiles.Length + " 张）");
             }
 
-            // main.js：形象/尺寸补丁（先归一化旧版再打，幂等）。
-            // 旧版（≤3.4）：qF gate + XF 尺寸表；新版（3.5+，2026-10）：gate 改名 tB、尺寸表改名 oB
-            // —— 两套锚点都尝试，各自命中才生效。
+            // main.js：形象/尺寸/拖拽补丁（先归一化旧版补丁再打，幂等；结构正则，任意版本适用）。
             mainText = NormalizeMain(mainText);
-            mainText = mainText.Replace(QGate, QPatch).Replace(TbGate, TbPatch)
-                               .Replace(XfGate, XfPatch).Replace(ObGate, ObPatch)
-                               .Replace(DragGate, DragPatch);
+            mainText = PatchMain(mainText);
             File.WriteAllText(t.MainJs, mainText);
-            bool newAnchor = mainText.Contains(ObPatch);
-            bool dragFixed = mainText.Contains("__cp=em.getCursorScreenPoint()");
-            log((newAnchor ? "[OK] main.js 补丁：tB gate 解锁 + 窗口 140px（3.5 新锚点）" : "[OK] main.js 补丁：qF 解锁（traebao 形象）+ 窗口 140px")
-                + (dragFixed ? " + 拖拽高 DPI 修复" : ""));
+            // 命中报告：gate 补丁成功时提取当前版本的混淆名，全部失配时明确告警
+            var gateDone = Regex.Match(mainText, ReGateNorm);
+            bool dragFixed = mainText.Contains("__cp=");
+            log(gateDone.Success
+                ? "[OK] main.js 补丁：形象 gate（" + gateDone.Groups[1].Value + "）解锁 + 窗口 140px" + (dragFixed ? " + 拖拽高 DPI 修复" : "")
+                : "[警告] main.js 未找到形象 gate 锚点（Trae 结构变化？）——宠物可能保持官方小球，请附带 Trae 版本号反馈");
 
             // floatingButton.html：CSS 尺寸（两种模式都改）
             if (File.Exists(t.ButtonHtml))
@@ -998,7 +997,7 @@ namespace ClawdPetInstaller
             string main = File.ReadAllText(t.MainJs);
             main = NormalizeMain(main);
             File.WriteAllText(t.MainJs, main);
-            log("[OK] main.js 已还原官方（qF/XF 回滚）");
+            log("[OK] main.js 已还原官方（形象/尺寸/拖拽补丁回滚）");
 
             // 3) html 归一化（CSS + 轮询脚本移除）
             if (File.Exists(t.ButtonHtml))
@@ -1189,13 +1188,46 @@ namespace ClawdPetInstaller
             else log("[跳过] 保留旧版宠物目录：" + candidate);
         }
 
-        // ---------- 补丁归一化（部署/卸载共用，幂等且兼容 180px 旧版与 3.5+ tB/oB/拖拽锚点） ----------
+        // ---------- 补丁归一化与打补丁（部署/卸载共用，幂等，任意版本混淆名自适应） ----------
         static string NormalizeMain(string s)
         {
-            return s.Replace(QPatch, QGate).Replace(TbPatch, TbGate)
-                    .Replace(XfPatch, XfGate).Replace(XfLegacy, XfGate)
-                    .Replace(ObPatch, ObGate)
-                    .Replace(DragPatch, DragGate);
+            s = Regex.Replace(s, ReGateNorm, ReGateOrig);
+            s = Regex.Replace(s, ReSizeNorm, ReSizeOrig);
+            s = Regex.Replace(s, ReDragNorm, ReDragOrig);
+            return s;
+        }
+
+        // drag-move 附近混淆的 electron screen 别名各版本不同（em/lm/...），
+        // 取离 handler 最近的 getCursorScreenPoint 引用名，随版本自适应。
+        static string FindScreenAlias(string s, int handlerIndex)
+        {
+            string best = null; int bestDist = int.MaxValue;
+            foreach (Match m in Regex.Matches(s, @"(\w+)\.getCursorScreenPoint\("))
+            {
+                int d = Math.Abs(m.Index - handlerIndex);
+                if (d < bestDist) { bestDist = d; best = m.Groups[1].Value; }
+            }
+            return best;
+        }
+
+        static string PatchMain(string s)
+        {
+            s = Regex.Replace(s, ReGateGate, ReGatePatch);
+            s = Regex.Replace(s, ReSizeGate, ReSizePatch);
+            Match h = Regex.Match(s, ReDragGate);
+            if (h.Success)
+            {
+                string alias = FindScreenAlias(s, h.Index);
+                if (alias != null)
+                {
+                    string patched = h.Groups[1].Value + ".on(\"icube-floating-chat:drag-move\",("
+                        + h.Groups[2].Value + "," + h.Groups[3].Value + "," + h.Groups[4].Value + ")=>{try{const __cp="
+                        + alias + ".getCursorScreenPoint();" + h.Groups[3].Value + "=__cp.x;"
+                        + h.Groups[4].Value + "=__cp.y}catch(__e){}";
+                    s = s.Replace(h.Value, patched);
+                }
+            }
+            return s;
         }
 
         static string NormalizeHtml(string s, bool removePoll)

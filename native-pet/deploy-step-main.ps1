@@ -1,4 +1,4 @@
-﻿﻿# 部署/回滚的提权子脚本（由 deploy-native-pet.ps1 以管理员身份调用）
+﻿# 部署/回滚的提权子脚本（由 deploy-native-pet.ps1 以管理员身份调用）
 # 职责：复制 webp 皮肤、给 main.js 与 floatingButton.html 打补丁（或全部反向回滚）
 #
 # 补丁清单（v2.0）：
@@ -30,13 +30,25 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 
-# ---------- 补丁锚点（均已在 3.4.2 验证唯一） ----------
-$qGate  = 'function qF(t){return"ball"}'
-$qPatch = 'function qF(t){return t==="ball"?"ball":"traebao"}'
+# ---------- 补丁锚点 ----------
+# v2.0.3：Trae 每个版本都会重命名混淆变量（qF/XF/an → tB/oB → 3.4.4 的 TB/PB/sn），
+# 硬编码锚点每次升级必失效，现改为按代码结构正则匹配，不依赖具体变量名：
+#   gate  形象开关：  function X(t){return"ball"} → function X(t){return t==="ball"?"ball":"traebao"}
+#   size  尺寸表：    X={ball:60,traebao:100} → X={ball:60,traebao:140}
+#   drag 拖拽修复：   X.on("icube-floating-chat:drag-move",(e,i,r)=>{ → 注入主进程权威光标坐标
+$reGate     = 'function (\w+)\((\w)\)\{return"ball"\}'
+$reGatePatch = 'function $1($2){return $2==="ball"?"ball":"traebao"}'
+$reGateNorm = 'function (\w+)\(\w\)\{return \w+==="ball"\?"ball":"traebao"\}'
+$reGateOrig = 'function $1(t){return"ball"}'
 
-$xfGate       = 'XF={ball:60,traebao:100}'
-$xfPatch      = 'XF={ball:60,traebao:140}'
-$xfLegacy180  = 'XF={ball:60,traebao:180}'   # v2.0 早期 180px 版，归一化用
+$reSize      = '(\w+)=\{ball:60,traebao:100\}'
+$reSizePatch = '$1={ball:60,traebao:140}'
+$reSizeNorm  = '(\w+)=\{ball:60,traebao:(?:140|180)\}'   # 含 v2.0 早期 180px 版
+$reSizeOrig  = '$1={ball:60,traebao:100}'
+
+$reDrag     = '(\w+)\.on\("icube-floating-chat:drag-move",\((\w+),(\w+),(\w+)\)=>\{'
+$reDragNorm = '\.on\("icube-floating-chat:drag-move",\((\w+),(\w+),(\w+)\)=>\{try\{const __cp=\w+\.getCursorScreenPoint\(\);\2=__cp\.x;\3=__cp\.y\}catch\(__e\)\{\}'
+$reDragOrig = '.on("icube-floating-chat:drag-move",($1,$2,$3)=>{'
 
 $cssBtnGate      = ".icon-traebao .btn {`n`twidth: 100px;`n`theight: 100px;`n}"
 $cssBtnPatch     = ".icon-traebao .btn {`n`twidth: 140px;`n`theight: 140px;`n}"
@@ -121,10 +133,34 @@ function Remove-PollBlock([string]$t) {
     return $t.Substring(0, $s) + $t.Substring($end)
 }
 
-# 把所有已知补丁（当前版 + 旧 180px 版）归一化回官方锚点
+# 把所有已知补丁（任意版本的 gate/尺寸/拖拽补丁）归一化回官方结构
 function Normalize-MainJs([string]$t) {
-    return $t.Replace($qPatch, $qGate).Replace($xfPatch, $xfGate).Replace($xfLegacy180, $xfGate)
+    $t = [regex]::Replace($t, $reGateNorm, $reGateOrig)
+    $t = [regex]::Replace($t, $reSizeNorm, $reSizeOrig)
+    $t = [regex]::Replace($t, $reDragNorm, $reDragOrig)
+    return $t
 }
+# 给 main.js 打补丁：gate 解锁 + 140px + 拖拽高 DPI 修复（screen 别名动态探测，
+# 取离 drag-move handler 最近的 getCursorScreenPoint 引用，随版本混淆名自适应）
+function Patch-MainJs([string]$t) {
+    $t = [regex]::Replace($t, $reGate, $reGatePatch)
+    $t = [regex]::Replace($t, $reSize, $reSizePatch)
+    $h = [regex]::Match($t, $reDrag)
+    if ($h.Success) {
+        $alias = $null; $best = [int]::MaxValue
+        foreach ($m in [regex]::Matches($t, '(\w+)\.getCursorScreenPoint\(')) {
+            $d = [math]::Abs($m.Index - $h.Index)
+            if ($d -lt $best) { $best = $d; $alias = $m.Groups[1].Value }
+        }
+        if ($alias) {
+            $g = $h.Groups
+            $new = "$($g[1].Value).on(`"icube-floating-chat:drag-move`",($($g[2].Value),$($g[3].Value),$($g[4].Value))=>{try{const __cp=$alias.getCursorScreenPoint();$($g[3].Value)=__cp.x;$($g[4].Value)=__cp.y}catch(__e){}"
+            $t = $t.Replace($h.Value, $new)
+        }
+    }
+    return $t
+}
+
 function Normalize-Html([string]$t) {
     $t = $t.Replace($cssBtnPatch, $cssBtnGate).Replace($cssBtnLegacy180, $cssBtnGate)
     $t = $t.Replace($cssImgPatch, $cssImgGate).Replace($cssImgLegacy180, $cssImgGate)
@@ -149,8 +185,7 @@ if ($Restore) {
         Copy-Item "$AssetDir\$f" $PetDir -Force
     }
     if (Test-Path $MainJs) {
-        $t = Normalize-MainJs (Read-Text $MainJs)
-        $t = $t.Replace($qGate, $qPatch).Replace($xfGate, $xfPatch)
+        $t = Patch-MainJs (Normalize-MainJs (Read-Text $MainJs))
         Write-Text $MainJs $t
     }
     if (Test-Path $ButtonHtml) {

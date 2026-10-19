@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿# ClawdPet → Trae 原生桌宠（TRAE Bao / 悬浮窗）皮肤部署脚本
+﻿# ClawdPet → Trae 原生桌宠（TRAE Bao / 悬浮窗）皮肤部署脚本
 #
 # 原理: Trae v3.4+ 的原生悬浮窗宠物（TRAE Bao）素材位于安装目录
 #   <Trae>\resources\app\out\vs\platform\iCubeFloatingChat\electron-main\media\icons\traebao\
@@ -154,16 +154,17 @@ foreach ($f in $skinFiles) {
     $b = (Get-FileHash (Join-Path $petDir $f) -ErrorAction SilentlyContinue).Hash
     if ($a -ne $b) { $ok = $false; Write-Host "[校验失败] $f" -ForegroundColor Red }
 }
-$patchMark = 'function qF(t){return t==="ball"?"ball":"traebao"}'
-$gateMark  = 'function qF(t){return"ball"}'
-$xfPatchMark = 'XF={ball:60,traebao:140}'
+# v2.0.3：锚点改结构正则（Trae 各版本混淆变量名不同：qF/XF → tB/oB → 3.4.4 TB/PB/sn）
+$patchRe    = 'function \w+\(\w\)\{return \w+==="ball"\?"ball":"traebao"\}'
+$gateRe     = 'function \w+\(\w\)\{return"ball"\}'
+$xfPatchMark = '{ball:60,traebao:140}'
 $pollMark = '<!--CLAWD-PET-POLL-START-->'
 $mainText = ""
 if (Test-Path $mainJs) { $mainText = [IO.File]::ReadAllText($mainJs) }
 $htmlText = ""
 if (Test-Path $buttonHtml) { $htmlText = [IO.File]::ReadAllText($buttonHtml) }
 if ($Restore) {
-    if ($mainText.Contains($patchMark) -or $mainText.Contains($xfPatchMark)) {
+    if ([regex]::IsMatch($mainText, $patchRe) -or $mainText.Contains($xfPatchMark)) {
         $ok = $false
         Write-Host "[校验失败] main.js 补丁未回滚" -ForegroundColor Red
     }
@@ -172,16 +173,19 @@ if ($Restore) {
         Write-Host "[校验失败] floatingButton.html 轮询脚本未移除" -ForegroundColor Red
     }
 } else {
-    if ($mainText.Contains($patchMark)) {
-        Write-Host "[OK] main.js qF 补丁已生效（traebao 形象已解锁）" -ForegroundColor Green
-    } elseif ($mainText.Contains($gateMark)) {
+    if ([regex]::IsMatch($mainText, $patchRe)) {
+        Write-Host "[OK] main.js 形象补丁已生效（traebao 形象已解锁）" -ForegroundColor Green
+    } elseif ([regex]::IsMatch($mainText, $gateRe)) {
         $ok = $false
         Write-Host "[校验失败] main.js 锁定点仍在（补丁未写入），请以管理员身份重试" -ForegroundColor Red
     } else {
-        Write-Host "[警告] 未找到 qF 锁定点（Trae 版本结构已变化），皮肤可能不生效，仅完成素材替换" -ForegroundColor Yellow
+        Write-Host "[警告] 未找到形象锁定点（Trae 版本结构已变化），皮肤可能不生效，仅完成素材替换" -ForegroundColor Yellow
     }
     if ($mainText.Contains($xfPatchMark)) {
         Write-Host "[OK] main.js 尺寸补丁已生效（traebao 窗口 140px）" -ForegroundColor Green
+    }
+    if ($mainText.Contains('__cp=')) {
+        Write-Host "[OK] main.js 拖拽高 DPI 修复已生效" -ForegroundColor Green
     }
     if ($htmlText.Contains($pollMark) -and $htmlText.Contains('width: 140px')) {
         Write-Host "[OK] floatingButton.html 已注入 Hooks 六态轮询 v2 + 140px 尺寸" -ForegroundColor Green

@@ -3,6 +3,23 @@
 本项目所有对 Trae 主程序（`main.js` / `floatingButton.html`）的修改均为**补丁式**修改：
 Trae 升级会还原官方文件，重新运行安装器（完整或轻量均可）即可一键恢复全部补丁。
 
+## [v2.0.3] - 2026-10-19
+
+### 修复
+
+- **Trae 3.4.4 升级后宠物第三次变回官方小球**。3.4.4 把形象 gate `tB` 改名 `TB`
+  （`function TB(t){return"ball"}`）、尺寸表 `oB` 改名 `PB`、`drag-move` 处理者改名为
+  `sn`，v2.0.2 携带的新旧两套硬编码锚点全部失配；且旧代码用 `String.Replace` 静默无操作、
+  日志无条件报 `[OK]`，故障被完全掩盖。
+- **锚点全面改用结构正则，不再依赖混淆变量名**。三处锚点按代码结构匹配：
+  `function X(t){return"ball"}`、`X={ball:60,traebao:100}`、
+  `X.on("icube-floating-chat:drag-move",(e,i,r)=>{`——Trae 未来再改名也无需适配。
+  拖拽补丁的 `screen` 别名改为动态探测（取离 handler 最近的 `getCursorScreenPoint` 引用，
+  3.4.4 实测为 `lm`）。安装/卸载前先正则归一化任意历史版本补丁 → 官方结构，跨版本重装幂等。
+- **锚点失配时明确告警**，不再假报成功。
+- 部署脚本（`deploy-native-pet.ps1` / `deploy-step-main.ps1`）多重 BOM 叠加导致
+  `param()` 绑定失效的问题（同类问题 v2.0.1 只修了 `build-installer.ps1`）。
+
 ## [v2.0.2] - 2026-10-16
 
 ### 修复
