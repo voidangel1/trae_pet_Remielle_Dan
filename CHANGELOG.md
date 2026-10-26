@@ -3,6 +3,28 @@
 本项目所有对 Trae 主程序（`main.js` / `floatingButton.html`）的修改均为**补丁式**修改：
 Trae 升级会还原官方文件，重新运行安装器（完整或轻量均可）即可一键恢复全部补丁。
 
+## [v2.1.0] - 2026-10-26
+
+### 适配 Trae 3.4.7（官方 TRAE Bao 正式上线）
+
+- **官方架构重做带来的第四次失效与全面适配**。3.4.7 官方把 TRAE Bao 正式发布：形象 gate
+  已删除（右键「切换外观」可在悬浮球 / trae宝 间切换，settings 直接生效）、尺寸表改为
+  `{ball:60,traebao:105}`、新增 `voice` 语音态素材、静态位改名 `default.png`。
+- **空闲态被官方 three.js 3D 实时渲染接管**（`media\traebao\renderer.js`，1.2MB bundle，
+  含视线跟踪 / 眨眼 / 拖拽物理 / 彩蛋），换 webp 素材在空闲态完全不可见。适配方案：
+  HTML 里把 renderer.js 引用改名使其加载失败，宠物自动回落官方 `<img>` 素材管线
+  （与旧版一致），全部状态可换素材；卸载时恢复引用即回到官方 3D。
+- **素材集更新**：`default.png`（静态 fallback，GIF 首帧转换）+ `voice.webp`（语音态用
+  notification 素材）+ `default.webp`（hooks 模式空闲呼吸动画——官方位是静态图，轮询
+  脚本 idle 态改用我们的动画版）。
+- 尺寸补丁目标更新：窗口 105 → 140、CSS 内容区 85 → 113（保持官方 105:85 比例）。
+- drag-move 高 DPI 修复保留（官方仍用渲染进程 screenX，锚点结构未变）。
+- 官方素材备份兼容两代：探针文件按 `default.png`（3.4.7）/ `default.webp`（旧版）自适应，
+  检测到 Trae 升级换素材时自动刷新备份；卸载按 3.4.7 五件套还原（default.png/busy/
+  super-busy/hover-drag/voice）。
+- 安装器升到 v2.1.0：三处 CSS 改结构正则锚点、禁 3D 补丁、命中报告区分
+  「3.4.7 官方已解锁」与「锚点失配告警」。
+
 ## [v2.0.3] - 2026-10-19
 
 ### 修复

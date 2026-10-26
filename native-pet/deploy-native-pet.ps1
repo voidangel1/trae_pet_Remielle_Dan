@@ -2,11 +2,13 @@
 #
 # 原理: Trae v3.4+ 的原生悬浮窗宠物（TRAE Bao）素材位于安装目录
 #   <Trae>\resources\app\out\vs\platform\iCubeFloatingChat\electron-main\media\icons\traebao\
-# 共 4 个状态位: default(静立) / busy(会话运行中) / super-busy(忙满3分钟每180s播10s) / hover-drag(悬停拖拽)
-# 本脚本把 Remielle 的 4 张动画 webp（node convert-native-pet.js 生成）替换进去，
-# 把设置 trae.floatingChat.buttonIcon 切回 "traebao"，并给 main.js 打 qF 补丁——
-# Trae CN 3.4.2 把图标归一化函数硬编码为 return "ball"（traebao 形象被灰度关闭，
-# 且会把设置改回 ball），必须打补丁解锁，见 deploy-step-main.ps1。
+# 状态位: default.png(静立) / busy(会话运行中) / super-busy(忙满3分钟每180s播10s) /
+#   hover-drag(悬停拖拽) / voice(3.4.7 语音态)
+# 本脚本把 Remielle 的动画素材（node convert-native-pet.js 生成）替换进去，
+# 把设置 trae.floatingChat.buttonIcon 切到 "traebao"，并打 main.js / floatingButton.html
+# 补丁（Trae ≤3.4.4 的形象锁解锁 + 140px + 拖拽高 DPI 修复 + 禁用 3.4.7 官方 3D 渲染
+# 回落素材模式 + Hooks 六态轮询注入），见 deploy-step-main.ps1。
+# Trae 3.4.7 起官方已原生支持右键「切换外观」（悬浮球 / trae宝），无需形象锁补丁。
 #
 # 用法:
 #   右键本文件 → 「使用 PowerShell 运行」        首次部署 / Trae 升级覆盖后重新部署
@@ -27,7 +29,9 @@ $ErrorActionPreference = "Stop"
 $assetDir  = Join-Path $PSScriptRoot "assets"
 $backupDir = Join-Path $assetDir "official-backup"
 $infoFile  = Join-Path $backupDir "backup-info.json"
-$skinFiles = @("default.webp", "busy.webp", "super-busy.webp", "hover-drag.webp",
+# 官方位素材（3.4.7 文件名）+ hooks 空闲动画 + 六态扩展
+$skinFiles = @("default.png", "busy.webp", "super-busy.webp", "hover-drag.webp",
+    "voice.webp", "default.webp",
     "thinking.webp", "editing.webp", "notification.webp", "error.webp")
 
 function Wait-Exit([int]$code) {
@@ -81,6 +85,7 @@ if ($Restore) {
         # 首次部署: 备份官方素材 + 记录部署前的 buttonIcon
         New-Item -ItemType Directory -Force -Path $backupDir | Out-Null
         Copy-Item (Join-Path $petDir "*.webp") $backupDir -Force
+        Copy-Item (Join-Path $petDir "*.png") $backupDir -Force -ErrorAction SilentlyContinue
         $prevIcon = "traebao"
         if (Test-Path $trae.Settings) {
             try {
@@ -94,11 +99,15 @@ if ($Restore) {
         Write-Host "[OK] 已备份官方 TRAE Bao 素材 → native-pet-assets\official-backup\（此前 buttonIcon: $prevIcon）" -ForegroundColor Green
     } else {
         # 已有备份: 检测 Trae 升级是否换了官方素材（既不像备份也不像我们的皮肤 → 刷新备份）
-        $curHash  = (Get-FileHash (Join-Path $petDir "default.webp") -ErrorAction SilentlyContinue).Hash
-        $bakHash  = (Get-FileHash (Join-Path $backupDir "default.webp") -ErrorAction SilentlyContinue).Hash
-        $skinHash = (Get-FileHash (Join-Path $assetDir "default.webp") -ErrorAction SilentlyContinue).Hash
+        # 探针文件：3.4.7 用 default.png，旧版用 default.webp；备份侧同名缺失时回退另一扩展名
+        $probe = if (Test-Path (Join-Path $petDir "default.png")) { "default.png" } else { "default.webp" }
+        $bakProbe = if (Test-Path (Join-Path $backupDir $probe)) { $probe } else { "default.webp" }
+        $curHash  = (Get-FileHash (Join-Path $petDir $probe) -ErrorAction SilentlyContinue).Hash
+        $bakHash  = (Get-FileHash (Join-Path $backupDir $bakProbe) -ErrorAction SilentlyContinue).Hash
+        $skinHash = (Get-FileHash (Join-Path $assetDir $probe) -ErrorAction SilentlyContinue).Hash
         if ($curHash -and $bakHash -and $skinHash -and $curHash -ne $bakHash -and $curHash -ne $skinHash) {
             Copy-Item (Join-Path $petDir "*.webp") $backupDir -Force
+            Copy-Item (Join-Path $petDir "*.png") $backupDir -Force -ErrorAction SilentlyContinue
             Write-Host "[OK] 检测到 Trae 升级更换了官方素材，备份已刷新" -ForegroundColor Green
         }
     }
@@ -154,41 +163,48 @@ foreach ($f in $skinFiles) {
     $b = (Get-FileHash (Join-Path $petDir $f) -ErrorAction SilentlyContinue).Hash
     if ($a -ne $b) { $ok = $false; Write-Host "[校验失败] $f" -ForegroundColor Red }
 }
-# v2.0.3：锚点改结构正则（Trae 各版本混淆变量名不同：qF/XF → tB/oB → 3.4.4 TB/PB/sn）
-$patchRe    = 'function \w+\(\w\)\{return \w+==="ball"\?"ball":"traebao"\}'
-$gateRe     = 'function \w+\(\w\)\{return"ball"\}'
-$xfPatchMark = '{ball:60,traebao:140}'
-$pollMark = '<!--CLAWD-PET-POLL-START-->'
+# v2.1：结构正则锚点 + 3.4.7 适配（gate 仅 ≤3.4.4 存在，官方已删）
+$patchRe     = 'function \w+\(\w\)\{return \w+==="ball"\?"ball":"traebao"\}'
+$gateRe      = 'function \w+\(\w\)\{return"ball"\}'
+$sizeMark    = '{ball:60,traebao:140}'
+$pollMark    = '<!--CLAWD-PET-POLL-START-->'
+$rendererMark = 'renderer.clawdpet-disabled.js'
 $mainText = ""
 if (Test-Path $mainJs) { $mainText = [IO.File]::ReadAllText($mainJs) }
 $htmlText = ""
 if (Test-Path $buttonHtml) { $htmlText = [IO.File]::ReadAllText($buttonHtml) }
 if ($Restore) {
-    if ([regex]::IsMatch($mainText, $patchRe) -or $mainText.Contains($xfPatchMark)) {
+    if ([regex]::IsMatch($mainText, $patchRe) -or $mainText.Contains($sizeMark) -or $mainText.Contains('__cp=')) {
         $ok = $false
         Write-Host "[校验失败] main.js 补丁未回滚" -ForegroundColor Red
     }
-    if ($htmlText.Contains($pollMark)) {
+    if ($htmlText.Contains($pollMark) -or $htmlText.Contains($rendererMark) -or $htmlText.Contains('width: 140px')) {
         $ok = $false
-        Write-Host "[校验失败] floatingButton.html 轮询脚本未移除" -ForegroundColor Red
+        Write-Host "[校验失败] floatingButton.html 补丁未回滚" -ForegroundColor Red
     }
 } else {
     if ([regex]::IsMatch($mainText, $patchRe)) {
-        Write-Host "[OK] main.js 形象补丁已生效（traebao 形象已解锁）" -ForegroundColor Green
+        Write-Host "[OK] main.js 形象补丁已生效（traebao 形象已解锁，Trae ≤3.4.4）" -ForegroundColor Green
     } elseif ([regex]::IsMatch($mainText, $gateRe)) {
         $ok = $false
         Write-Host "[校验失败] main.js 锁定点仍在（补丁未写入），请以管理员身份重试" -ForegroundColor Red
     } else {
-        Write-Host "[警告] 未找到形象锁定点（Trae 版本结构已变化），皮肤可能不生效，仅完成素材替换" -ForegroundColor Yellow
+        Write-Host "[OK] Trae 3.4.7+：官方已原生解锁 trae宝（右键「切换外观」）" -ForegroundColor Green
     }
-    if ($mainText.Contains($xfPatchMark)) {
+    if ($mainText.Contains($sizeMark)) {
         Write-Host "[OK] main.js 尺寸补丁已生效（traebao 窗口 140px）" -ForegroundColor Green
+    } else {
+        $ok = $false
+        Write-Host "[校验失败] main.js 尺寸补丁未写入（锚点未命中，Trae 结构变化？）" -ForegroundColor Red
     }
     if ($mainText.Contains('__cp=')) {
         Write-Host "[OK] main.js 拖拽高 DPI 修复已生效" -ForegroundColor Green
+    } else {
+        $ok = $false
+        Write-Host "[校验失败] main.js 拖拽补丁未写入（锚点未命中，Trae 结构变化？）" -ForegroundColor Red
     }
-    if ($htmlText.Contains($pollMark) -and $htmlText.Contains('width: 140px')) {
-        Write-Host "[OK] floatingButton.html 已注入 Hooks 六态轮询 v2 + 140px 尺寸" -ForegroundColor Green
+    if ($htmlText.Contains($pollMark) -and $htmlText.Contains('width: 140px') -and $htmlText.Contains($rendererMark)) {
+        Write-Host "[OK] floatingButton.html：Hooks 六态轮询 v2.1 + 140px 尺寸 + 官方 3D 已禁用（回落素材模式）" -ForegroundColor Green
     } elseif (-not $htmlText.Contains('</body>')) {
         Write-Host "[警告] floatingButton.html 结构已变化，六态轮询与尺寸补丁未注入" -ForegroundColor Yellow
     } else {
@@ -197,12 +213,12 @@ if ($Restore) {
     }
 }
 if ($ok) {
-    Write-Host "`n[完成] $($(if ($Restore) { '官方素材与补丁已全部回滚' } else { 'Remielle 皮肤 + 全部补丁已部署（六态 + 140px）' }))，重启 Trae 后生效。" -ForegroundColor Green
+    Write-Host "`n[完成] $($(if ($Restore) { '官方素材与补丁已全部回滚' } else { 'Remielle 皮肤 + 全部补丁已部署（六态 + 140px + 素材模式）' }))，重启 Trae 后生效。" -ForegroundColor Green
     if (-not $Restore) {
-        Write-Host "  Hooks 六态: 提问→thinking  编辑/查看/调用工具→editing  模型提问→notification  异常→error  完成→idle"
+        Write-Host "  Hooks 六态: 提问→thinking  编辑/查看/调用工具→editing  模型提问→notification  异常→error  完成→idle(呼吸动画)"
         Write-Host "  状态由 Trae Hooks 驱动（首个事件自动拉起 127.0.0.1:27416 状态服务器）"
-        Write-Host "  点击 Trae 状态栏 Pet 图标可在 Hooks 六态 / 官方四态之间切换（持久化）"
-        Write-Host "  桥不可用时回落官方四态: 静立 / 会话忙碌 / 卖力 / 悬停拖拽"
+        Write-Host "  点击 Trae 状态栏 Pet 图标可在 Hooks 六态 / 官方态之间切换（持久化）"
+        Write-Host "  官方态（3.4.7）: 静立 / 会话忙碌 / 卖力 / 语音 / 悬停拖拽；右键「切换外观」可回官方悬浮球"
     }
     Wait-Exit 0
 } else {

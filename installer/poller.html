@@ -1,10 +1,10 @@
 <!--CLAWD-PET-POLL-START-->
 <script>
-/* ClawdPet v2.0: Hooks 六态轮询 + 模式开关（安装器注入，勿手改） */
+/* ClawdPet v2.1: Hooks 六态轮询 + 模式开关（安装器注入，勿手改） */
 (function () {
   var STATE_URL = 'http://127.0.0.1:27416/state';
   var STALE_MS = 25000;
-  var EXTRA = { attention: 'hover-drag.webp', thinking: 'thinking.webp', editing: 'editing.webp', notification: 'notification.webp', error: 'error.webp' };
+  var EXTRA = { idle: 'default.webp', attention: 'hover-drag.webp', thinking: 'thinking.webp', editing: 'editing.webp', notification: 'notification.webp', error: 'error.webp' };
   var origGetTraebaoSrc = getTraebaoSrc;
   var hookState = null;
 

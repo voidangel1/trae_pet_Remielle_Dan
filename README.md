@@ -30,7 +30,7 @@ Trae v3.4+ 自带一个原生悬浮宠物（TRAE Bao），但默认形象被灰�
 
 **方式一：EXE 安装器（推荐）**
 
-1. 下载 [release 里的 `ClawdPet-Setup-v2.0.3.exe`](release/)（约 9MB，素材全部内嵌，无需克隆仓库）
+1. 下载 [release 里的 `ClawdPet-Setup-v2.1.0.exe`](release/)（约 9MB，素材全部内嵌，无需克隆仓库）
 2. 退出 Trae（托盘右键 → 退出），双击运行
 3. 三种模式任选：
    - **完整安装**：六态 + 官方四态切换 + Hooks + 扩展 + 安装后指引
@@ -62,8 +62,8 @@ Trae Hooks（五事件）
 
 ## 兼容性
 
-- Windows 10/11 + Trae CN 3.4.2+（v2.0.3 起 `main.js` 补丁锚点改用结构正则，不依赖混淆变量名，3.4.4 实测通过；Trae 大版本重构若再失配，安装日志会明确告警）
-- Trae v3.4+（CN / 国际版）；旧版 Trae 或想用 v1.x 独立 Electron 版 → 切到 [`old` 分支](../../tree/old)
+- Windows 10/11 + Trae CN 3.4.2+（v2.1.0 适配 3.4.7：官方已原生支持右键「切换外观」，本项目禁用官方 3D 渲染回落素材模式；锚点全部结构正则，Trae 大版本重构若再失配，安装日志会明确告警）
+- Trae v3.4+（CN / 国际版）；旧版 Trae 或想用 v1.x 独立 Electron 版 → 切到 [`old` 分支](../../tree/old)；Qoder 桌宠版 → 切到 [`qoder` 分支](../../tree/qoder)
 - 需要 Trae 自带 Node（Hooks 执行用，安装器自动探测）
 
 ## 开发与构建
@@ -77,7 +77,7 @@ npm run convert                   # 主题 GIF → 动画 webp（改素材后重
 
 ## 分支说明
 
-- `master`：v2.0.3 当前版本（原生悬浮窗移植 + EXE 安装器；v2.0.1：自定义路径检测、无 node 时国内镜像自动下载、VSIX+CLI 扩展注册；v2.0.2：适配 Trae 3.5 新锚点 oB；v2.0.3：锚点全面改结构正则、适配 Trae 3.4.4 TB/PB/sn、失配告警）
+- `master`：v2.1.0 当前版本（原生悬浮窗移植 + EXE 安装器；v2.0.1：自定义路径检测、VSIX+CLI 扩展注册；v2.0.2：适配 Trae 3.5 锚点；v2.0.3：锚点全面改结构正则；v2.1.0：适配 Trae 3.4.7——官方 TRAE Bao 上线 + 禁 3D 回落素材模式 + voice/default.png 新素材）
 - `old`：v1.0–1.4 独立 Electron 宠物（旧版 Trae 与独立模式用户看这里）
 
 ## 致谢

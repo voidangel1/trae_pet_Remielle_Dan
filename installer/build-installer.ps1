@@ -1,7 +1,7 @@
 ﻿# build-installer.ps1 — 编译 ClawdPet 安装器 EXE（csc，零第三方依赖）
 #
-# 产出: ..\release\ClawdPet-Setup-v2.0.3.exe（单文件，素材/扩展/脚本全部嵌入）
-# 前置: native-pet\assets\*.webp（皮肤 8 张 + official-backup 官方 4 张）已生成
+# 产出: ..\release\ClawdPet-Setup-v2.1.0.exe（单文件，素材/扩展/脚本全部嵌入）
+# 前置: native-pet\assets\（皮肤 10 个文件 + official-backup 官方 3.4.7 五件套）已生成
 #       （运行 native-pet\convert-native-pet.js；官方备份来自首次部署）
 param(
     [string]$Output = ""
@@ -10,7 +10,7 @@ $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $root = Split-Path -Parent $here
 $build = Join-Path $here 'build'
-if (-not $Output) { $Output = Join-Path (Join-Path $root 'release') 'ClawdPet-Setup-v2.0.3.exe' }
+if (-not $Output) { $Output = Join-Path (Join-Path $root 'release') 'ClawdPet-Setup-v2.1.0.exe' }
 
 # ---------- 1. 暂存资源（统一命名） ----------
 Remove-Item $build -Recurse -Force -ErrorAction SilentlyContinue
@@ -18,8 +18,9 @@ New-Item -ItemType Directory -Force -Path $build | Out-Null
 
 $assets = Join-Path (Join-Path $root 'native-pet') 'assets'
 $skinMap = @{
-    'default.webp' = 'skin_default.webp'; 'busy.webp' = 'skin_busy.webp'
-    'super-busy.webp' = 'skin_super-busy.webp'; 'hover-drag.webp' = 'skin_hover-drag.webp'
+    'default.png' = 'skin_default.png'; 'default.webp' = 'skin_default.webp'
+    'busy.webp' = 'skin_busy.webp'; 'super-busy.webp' = 'skin_super-busy.webp'
+    'hover-drag.webp' = 'skin_hover-drag.webp'; 'voice.webp' = 'skin_voice.webp'
     'thinking.webp' = 'skin_thinking.webp'; 'editing.webp' = 'skin_editing.webp'
     'notification.webp' = 'skin_notification.webp'; 'error.webp' = 'skin_error.webp'
 }
@@ -29,11 +30,11 @@ foreach ($k in $skinMap.Keys) {
     Copy-Item $src (Join-Path $build $skinMap[$k]) -Force
 }
 
-# 官方素材（卸载还原用）
+# 官方素材（卸载还原用；3.4.7 五件套）
 $officialBackup = Join-Path $assets 'official-backup'
-foreach ($f in @('busy.webp', 'default.webp', 'hover-drag.webp', 'super-busy.webp')) {
+foreach ($f in @('default.png', 'busy.webp', 'super-busy.webp', 'hover-drag.webp', 'voice.webp')) {
     $src = Join-Path $officialBackup $f
-    if (-not (Test-Path $src)) { throw "缺少官方素材备份 $f（需要一份原始 Trae 的 traebao 素材）" }
+    if (-not (Test-Path $src)) { throw "缺少官方素材备份 $f（需要一份原始 Trae 3.4.7 的 traebao 素材）" }
     Copy-Item $src (Join-Path $build "official_$f") -Force
 }
 

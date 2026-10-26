@@ -1,4 +1,4 @@
-// ClawdPetInstaller.cs — Remielle 桌宠 v2.0.3 安装器（WinForms，csc 编译，零依赖）
+// ClawdPetInstaller.cs — Remielle 桌宠 v2.1.0 安装器（WinForms，csc 编译，零依赖）
 //
 // 功能：
 //   完整安装：原生六态（Trae Hooks 驱动）+ 官方四态可切换 + 扩展 + hooks.json
@@ -75,7 +75,7 @@ namespace ClawdPetInstaller
 
         public MainForm()
         {
-            Text = "ClawdPet v2.0.3 安装器（Remielle × Trae）";
+            Text = "ClawdPet v2.1.0 安装器（Remielle × Trae）";
             Font = new Font("Microsoft YaHei UI", 9F);
             StartPosition = FormStartPosition.CenterScreen;
             ClientSize = new Size(620, 460);
@@ -311,38 +311,48 @@ namespace ClawdPetInstaller
     static class Installer
     {
         // ---- 补丁锚点（与 deploy-step-main.ps1 完全一致） ----
-        // v2.0.3：Trae 每个版本都会重命名混淆变量（qF/XF/an → tB/oB → 3.4.4 的 TB/PB/sn），
-        // 硬编码锚点每次升级必失效（v2.0.2 的 tB/oB 在 3.4.4 上即失配），现改为按代码结构
-        // 正则匹配，不依赖具体变量名；electron screen 别名在打拖拽补丁时动态探测。
-        //   gate  形象开关：  function X(t){return"ball"} → function X(t){return t==="ball"?"ball":"traebao"}
-        //   size  尺寸表：    X={ball:60,traebao:100} → X={ball:60,traebao:140}
-        //   drag  拖拽修复：  X.on("icube-floating-chat:drag-move",(e,i,r)=>{ → 主进程权威光标坐标
+        // v2.1：按代码结构正则匹配，不依赖混淆变量名；electron screen 别名动态探测。
+        //   gate  形象开关：仅 Trae ≤3.4.4 存在（3.4.7 官方已删，右键「切换外观」原生支持），
+        //                    无命中属正常
+        //   size  尺寸表：  X={ball:60,traebao:100|105} → 140（两代官方值都接受）
+        //   drag  拖拽修复：X.on("icube-floating-chat:drag-move",(e,i,r)=>{ → 主进程权威光标坐标
         const string ReGateGate  = @"function (\w+)\((\w)\)\{return""ball""\}";
         const string ReGatePatch = "function $1($2){return $2===\"ball\"?\"ball\":\"traebao\"}";
         const string ReGateNorm  = @"function (\w+)\(\w\)\{return \w+===""ball""\?""ball"":""traebao""\}";
         const string ReGateOrig  = "function $1(t){return\"ball\"}";
-        const string ReSizeGate  = @"(\w+)=\{ball:60,traebao:100\}";
+        const string ReSizeGate  = @"(\w+)=\{ball:60,traebao:(?:100|105)\}";
         const string ReSizePatch = "$1={ball:60,traebao:140}";
         const string ReSizeNorm  = @"(\w+)=\{ball:60,traebao:(?:140|180)\}";   // 含 v2.0 早期 180px 版
-        const string ReSizeOrig  = "$1={ball:60,traebao:100}";
+        const string ReSizeOrig  = "$1={ball:60,traebao:105}";
         const string ReDragGate  = @"(\w+)\.on\(""icube-floating-chat:drag-move"",\((\w+),(\w+),(\w+)\)=>\{";
         const string ReDragNorm  = @"\.on\(""icube-floating-chat:drag-move"",\((\w+),(\w+),(\w+)\)=>\{try\{const __cp=\w+\.getCursorScreenPoint\(\);\2=__cp\.x;\3=__cp\.y\}catch\(__e\)\{\}";
         const string ReDragOrig  = ".on(\"icube-floating-chat:drag-move\",($1,$2,$3)=>{";
         // 已打补丁的判定（IsV2Installed / 备份跳过共用）
         const string ReSizeDone  = "{ball:60,traebao:140}";
-        const string CssBtnGate = ".icon-traebao .btn {\n\twidth: 100px;\n\theight: 100px;\n}";
-        const string CssBtnPatch = ".icon-traebao .btn {\n\twidth: 140px;\n\theight: 140px;\n}";
-        const string CssBtnLegacy = ".icon-traebao .btn {\n\twidth: 180px;\n\theight: 180px;\n}";
-        const string CssImgGate = ".btn img { object-fit: cover; pointer-events: none; width: 80px; height: 80px; }";
-        const string CssImgPatch = ".btn img { object-fit: cover; pointer-events: none; width: 140px; height: 140px; }";
-        const string CssImgLegacy = ".btn img { object-fit: cover; pointer-events: none; width: 180px; height: 180px; }";
+        // HTML：禁用官方 3D 渲染（3.4.7 空闲态被 three.js 接管，禁用后回落 img 素材模式）
+        const string RendererGate  = "script.src = './traebao/renderer.js';";
+        const string RendererPatch = "script.src = './traebao/renderer.clawdpet-disabled.js';";
+        // HTML：尺寸 CSS（3.4.7 官方 105/85 → 140/113，保持比例）
+        const string ReCssBtnGate  = @"(\.icon-traebao \.btn \{\s*width: )105px(;\s*height: )105px(;)";
+        const string ReCssBtnPatch = "${1}140px${2}140px${3}";
+        const string ReCssBtnNorm  = @"(\.icon-traebao \.btn \{\s*width: )(?:140|113|100|180)px(;\s*height: )(?:140|113|100|180)px(;)";
+        const string ReCssBtnOrig  = "${1}105px${2}105px${3}";
+        const string ReCssImgGate  = @"(\.btn img \{[^}]*?width: )85px(;\s*height: )85px(;)";
+        const string ReCssImgPatch = "${1}113px${2}113px${3}";
+        const string ReCssImgNorm  = @"(\.btn img \{[^}]*?width: )(?:113|140|80|180)px(;\s*height: )(?:113|140|80|180)px(;)";
+        const string ReCssImgOrig  = "${1}85px${2}85px${3}";
+        const string ReCssContentGate  = @"(\.icon-traebao \.btnContent \{[^}]*?width: )85px(;\s*height: )85px(;)";
+        const string ReCssContentPatch = "${1}113px${2}113px${3}";
+        const string ReCssContentNorm  = @"(\.icon-traebao \.btnContent \{[^}]*?width: )(?:113|140|80|180)px(;\s*height: )(?:113|140|80|180)px(;)";
+        const string ReCssContentOrig  = "${1}85px${2}85px${3}";
         const string PollStart = "<!--CLAWD-PET-POLL-START-->";
         const string PollEnd = "<!--CLAWD-PET-POLL-END-->";
 
-        static readonly string[] SkinFiles = { "default.webp", "busy.webp", "super-busy.webp", "hover-drag.webp" };
+        // 官方位素材（3.4.7 文件名）+ hooks 空闲动画 + 六态扩展
+        static readonly string[] SkinFiles = { "default.png", "busy.webp", "super-busy.webp", "hover-drag.webp", "voice.webp", "default.webp" };
         static readonly string[] ExtraFiles = { "thinking.webp", "editing.webp", "notification.webp", "error.webp" };
-        // 官方原始素材（卸载时无备份也可还原）
-        static readonly string[] OfficialFiles = { "busy.webp", "default.webp", "hover-drag.webp", "super-busy.webp" };
+        // 官方原始素材（卸载时无备份也可还原；3.4.7 五件套）
+        static readonly string[] OfficialFiles = { "default.png", "busy.webp", "super-busy.webp", "hover-drag.webp", "voice.webp" };
 
         static string TraeDir()
         {
@@ -601,7 +611,7 @@ namespace ClawdPetInstaller
         static void DownloadFile(string url, string dst, Action<string> log)
         {
             var req = (HttpWebRequest)WebRequest.Create(url);
-            req.UserAgent = "ClawdPetInstaller/2.0.3";
+            req.UserAgent = "ClawdPetInstaller/2.1.0";
             req.AllowAutoRedirect = true;
             req.Timeout = 30000;
             req.ReadWriteTimeout = 60000;
@@ -689,21 +699,37 @@ namespace ClawdPetInstaller
             mainText = NormalizeMain(mainText);
             mainText = PatchMain(mainText);
             File.WriteAllText(t.MainJs, mainText);
-            // 命中报告：gate 补丁成功时提取当前版本的混淆名，全部失配时明确告警
+            // 命中报告：gate 仅 ≤3.4.4 存在；size/drag 失配时明确告警
             var gateDone = Regex.Match(mainText, ReGateNorm);
+            bool sizeDone = mainText.Contains(ReSizeDone);
             bool dragFixed = mainText.Contains("__cp=");
-            log(gateDone.Success
-                ? "[OK] main.js 补丁：形象 gate（" + gateDone.Groups[1].Value + "）解锁 + 窗口 140px" + (dragFixed ? " + 拖拽高 DPI 修复" : "")
-                : "[警告] main.js 未找到形象 gate 锚点（Trae 结构变化？）——宠物可能保持官方小球，请附带 Trae 版本号反馈");
+            if (gateDone.Success)
+                log("[OK] main.js 补丁：形象 gate（" + gateDone.Groups[1].Value + "）解锁 + 窗口 140px" + (dragFixed ? " + 拖拽高 DPI 修复" : ""));
+            else
+                log("[OK] main.js：Trae 3.4.7+ 官方已原生解锁 trae宝（右键「切换外观」）");
+            if (!sizeDone)
+                log("[警告] main.js 尺寸锚点未命中（Trae 结构变化？）——窗口可能保持官方 105px，请附带 Trae 版本号反馈");
+            if (!dragFixed)
+                log("[警告] main.js 拖拽锚点未命中（Trae 结构变化？）——非 16:9 屏拖拽可能错位");
 
-            // floatingButton.html：CSS 尺寸（两种模式都改）
+            // floatingButton.html：禁用官方 3D（回落素材模式）+ CSS 尺寸（两种模式都改）
             if (File.Exists(t.ButtonHtml))
             {
                 string html = File.ReadAllText(t.ButtonHtml);
                 html = NormalizeHtml(html, false);
-                html = html.Replace(CssBtnGate, CssBtnPatch).Replace(CssImgGate, CssImgPatch);
+                html = html.Replace(RendererGate, RendererPatch);
+                html = Regex.Replace(html, ReCssBtnGate, ReCssBtnPatch);
+                html = Regex.Replace(html, ReCssImgGate, ReCssImgPatch);
+                html = Regex.Replace(html, ReCssContentGate, ReCssContentPatch);
                 File.WriteAllText(t.ButtonHtml, html);
-                log("[OK] floatingButton.html：立绘 140px");
+                bool btn140 = html.Contains("width: 140px");
+                bool no3d = html.Contains(RendererPatch);
+                if (btn140 && no3d)
+                    log("[OK] floatingButton.html：140px 尺寸 + 官方 3D 已禁用（回落素材模式）");
+                else if (btn140)
+                    log("[警告] 140px 已生效，但未找到官方 3D 渲染引用（Trae ≤3.4.4 无此机制，正常）");
+                else
+                    log("[警告] floatingButton.html 尺寸锚点未命中（Trae 结构变化？）——立绘可能保持官方 105px");
             }
         }
 
@@ -981,7 +1007,7 @@ namespace ClawdPetInstaller
         // ---------- 卸载 ----------
         public static void RestoreSkin(TraeInfo t, Action<string> log)
         {
-            // 1) 素材还原：优先本地备份，缺失时用嵌入官方素材
+            // 1) 素材还原：优先本地备份，缺失时用嵌入官方素材（3.4.7 五件套）
             string backup = Path.Combine(RuntimeDir(), "official-backup");
             foreach (string f in OfficialFiles)
             {
@@ -991,7 +1017,13 @@ namespace ClawdPetInstaller
             }
             foreach (string f in ExtraFiles)
                 try { File.Delete(Path.Combine(t.PetDir, f)); } catch { }
-            log("[OK] 官方素材已还原（4 张），六态素材已清理");
+            // default.webp 是我们加的 hooks 空闲动画（3.4.7 官方无此文件）；旧版官方备份里有则一并还原
+            string defW = Path.Combine(backup, "default.webp");
+            if (File.Exists(defW))
+                File.Copy(defW, Path.Combine(t.PetDir, "default.webp"), true);
+            else
+                try { File.Delete(Path.Combine(t.PetDir, "default.webp")); } catch { }
+            log("[OK] 官方素材已还原（3.4.7 五件套），六态素材已清理");
 
             // 2) main.js 归一化
             string main = File.ReadAllText(t.MainJs);
@@ -999,13 +1031,13 @@ namespace ClawdPetInstaller
             File.WriteAllText(t.MainJs, main);
             log("[OK] main.js 已还原官方（形象/尺寸/拖拽补丁回滚）");
 
-            // 3) html 归一化（CSS + 轮询脚本移除）
+            // 3) html 归一化（3D 渲染恢复 + CSS + 轮询脚本移除）
             if (File.Exists(t.ButtonHtml))
             {
                 string html = File.ReadAllText(t.ButtonHtml);
                 html = NormalizeHtml(html, true);
                 File.WriteAllText(t.ButtonHtml, html);
-                log("[OK] floatingButton.html 已还原官方（尺寸/轮询回滚）");
+                log("[OK] floatingButton.html 已还原官方（3D 渲染/尺寸/轮询回滚）");
             }
         }
 
@@ -1232,8 +1264,10 @@ namespace ClawdPetInstaller
 
         static string NormalizeHtml(string s, bool removePoll)
         {
-            s = s.Replace(CssBtnPatch, CssBtnGate).Replace(CssBtnLegacy, CssBtnGate);
-            s = s.Replace(CssImgPatch, CssImgGate).Replace(CssImgLegacy, CssImgGate);
+            s = s.Replace(RendererPatch, RendererGate);
+            s = Regex.Replace(s, ReCssBtnNorm, ReCssBtnOrig);
+            s = Regex.Replace(s, ReCssImgNorm, ReCssImgOrig);
+            s = Regex.Replace(s, ReCssContentNorm, ReCssContentOrig);
             if (removePoll)
             {
                 int a = s.IndexOf(PollStart, StringComparison.Ordinal);
