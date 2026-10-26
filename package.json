@@ -1,10 +1,13 @@
 {
   "name": "clawd-native-pet",
-  "version": "2.0.2",
-  "description": "Remielle 桌宠 for Trae 原生悬浮窗（皮肤移植 / Hooks 六态 / EXE 安装器）",
+  "version": "1.0.0",
+  "description": "Remielle 桌宠 for Qoder 原生宠物（Petdex / GIF → 图集 / EXE 安装器）",
   "license": "MIT",
   "scripts": {
-    "convert": "node native-pet/convert-native-pet.js"
+    "convert": "node native-pet/convert-native-pet.js",
+    "convert:qoder": "node qoder-pet/convert-qoder-pet.js",
+    "qoder:art": "node qoder-pet/make-installer-art.js",
+    "qoder:build": "powershell -NoProfile -ExecutionPolicy Bypass -File qoder-pet/installer/build-qoder-installer.ps1"
   },
   "dependencies": {
     "sharp": "^0.35.5"

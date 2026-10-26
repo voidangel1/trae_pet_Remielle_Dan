@@ -1,84 +1,142 @@
-# Remielle Pet for Trae — 蕾米埃尔桌面宠物
+# Remielle Pet for Qoder — 蕾米埃尔桌面宠物
 
-把 [Remielle（蕾米埃尔）](Remielle_Dan-clawd-theme-v0.5.4/) 接进 **Trae IDE 原生悬浮窗**：你的 AI 助手在思考、写代码、等你确认时，右下角的小人会实时做出对应动作。零独立进程、随 Trae 启停、一个 EXE 装好。
+![Remielle Qoder 桌宠](qoder-pet/preview.png)
+
+把 [Remielle（蕾米埃尔）](Remielle_Dan-clawd-theme-v0.5.4/) 做成 **Qoder 原生桌面宠物（Petdex）**：不修改 Qoder 程序、不注入页面、不运行后台进程，只写入一个宠物包，Qoder 自己驱动待机、忙碌、等待、审查、失败，以及启动问候、悬停、拖拽和视线跟随。
 
 基于 [6666ccc/codex_pet_Remielle_Dan](https://github.com/6666ccc/codex_pet_Remielle_Dan) 二次开发（主题作者：刘畅）。
 
-| 待机 | 思考 | 编辑 |
-|---|---|---|
-| ![idle](Remielle_Dan-clawd-theme-v0.5.4/assets/idle-loop.gif) | ![thinking](Remielle_Dan-clawd-theme-v0.5.4/assets/thinking.gif) | ![editing](Remielle_Dan-clawd-theme-v0.5.4/assets/editing.gif) |
+> 本仓库的 `master` 分支是 **Trae 原生悬浮窗版**（Hooks 六态 + 主程序补丁）；当前 `qoder` 分支是 **Qoder 原生宠物版**。两者安装互不冲突，详见[与 Trae 版的区别](#与-trae-版的区别)。
 
 ## 它能做什么
 
-Trae v3.4+ 自带一个原生悬浮宠物（TRAE Bao），但默认形象被灰度关闭、只剩一个圆球，且状态只有「空闲/忙碌/超忙碌/拖拽」四种静态图。本项目：
+Qoder 自带桌面宠物系统（Petdex），支持每个角色一套 8 列 × 11 行的精灵图集，由 Qoder 根据 IDE 状态播放对应行的动画。本项目把 Remielle 的 6 套原始 GIF 动画重新编排成 Qoder 的图集格式：
 
-- **解锁官方宠物形象**，并把 Remielle 的 6 套动画换上去（逐帧时序 1:1 保留，比原 GIF 更精确）
-- **恢复完整的 Hooks 六态状态机**——你发消息她开始思考、AI 改文件她低头干活、AI 向你提问她会举手等你、出错她有专属表情
-- 状态栏 **Pet 图标一键切换** Hooks 六态 / 官方四态（桥挂了自动回落官方模式，宠物永不消失）
-- 官方悬浮窗的全部交互保留：单击开关对话浮窗、右键菜单、拖拽、`Alt+Space`、0.5–2 倍缩放
+- **原生渲染**：192×208 单元格、1536×2288 图集，逐帧选取并保留原始动作节奏
+- **六套素材全覆盖**：待机、编辑、等待、思考、出错、注意（attention）
+- **原生交互保留**：启动挥手、悬停轻跳、左右拖拽、鼠标视线跟随
+- **零侵入**：不修改 Qoder 安装目录、设置或缓存，不需要管理员权限
+- **可逆**：安装器自动备份同名宠物，卸载只删除自己写入的目录
 
-| 你的操作 / Trae 事件 | 宠物状态 |
-|---|---|
-| 无事发生 | idle 呼吸循环 |
-| 发送消息（UserPromptSubmit） | thinking |
-| AI 执行工具/编辑文件（PreToolUse） | editing |
-| AI 回复以问句结尾、等你确认（Stop） | notification（常驻直到你回复） |
-| 出错（Stop 错误字段） | error |
-| 悬停 / 拖拽 | attention |
+| Qoder 状态 / 交互 | 宠物表现 | 素材来源 |
+|---|---|---|
+| 空闲（idle） | 呼吸循环 | `idle-loop.gif` |
+| Agent 运行（running） | 低头忙碌 / 编辑 | `editing.gif` |
+| 等待你（waiting） | 举手等待 | `notification.gif` |
+| 代码审查（review） | 思考 | `thinking.gif` |
+| 任务失败（failed） | 出错懊恼 | `error.gif` |
+| 启动问候（waving） | 挥手 | `notification.gif` 前 4 帧 |
+| 悬停（jumping） | 轻跳 | `attention.gif` + 合成位移 |
+| 拖拽（runningLeft / runningRight） | 朝拖动方向移动 | `attention.gif`（镜像） |
+| 视线跟随（lookLeft / lookRight） | 左右看 | `idle-loop.gif`（镜像） |
 
 ## 安装
 
-**方式一：EXE 安装器（推荐）**
+### 方式一：EXE 安装器（推荐）
 
-1. 下载 [release 里的 `ClawdPet-Setup-v2.0.3.exe`](release/)（约 9MB，素材全部内嵌，无需克隆仓库）
-2. 退出 Trae（托盘右键 → 退出），双击运行
-3. 三种模式任选：
-   - **完整安装**：六态 + 官方四态切换 + Hooks + 扩展 + 安装后指引
-   - **轻量安装**：只换官方四态皮肤，不碰 Hooks 与页面注入（最稳）
-   - **卸载**：一键还原官方原样，**同时能清理本项目的旧版本（v1.0–1.4 独立宠物）**
-4. 重新打开 Trae，右下角出现 140px 的 Remielle
+1. 下载 [release 里的 `Remielle-QoderPet-Setup-v1.0.0.exe`](release/)（约 2.3 MB，宠物包全部内嵌）
+2. 双击运行，点「安装 / 更新」（无需管理员权限）
+3. 打开 Qoder → **设置 → 桌面宠物（Desktop Pet）→ 刷新** → 选择「蕾米埃尔」
 
-**方式二：脚本部署（适合 Trae 升级后的重部署 / 无扩展皮肤模式）**
+卸载：重新打开安装器 → 「卸载」。只删除 `%USERPROFILE%\.petdex\pets\remielle`，不会修改 Qoder 配置；安装前的同名宠物目录会备份到 `%LOCALAPPDATA%\RemielleQoderPet\backups`。
 
-```powershell
-右键 native-pet\deploy-native-pet.ps1 → 使用 PowerShell 运行   # 会弹一次 UAC
+### 方式二：手动安装（已克隆仓库）
+
+先生成宠物包（需要 Node.js 与 `sharp`）：
+
+```bash
+npm install
+npm run convert:qoder
 ```
 
-> 脚本方式不含桥接扩展与 Hooks 注册（六态需要它们）——首次安装请用 EXE 安装器，脚本主要面向升级后的重部署。完整说明见 [INSTALL.md](INSTALL.md)。
+然后复制到 Petdex 目录：
+
+```powershell
+$dst = "$env:USERPROFILE\.petdex\pets\remielle"
+New-Item -ItemType Directory -Force $dst | Out-Null
+Copy-Item qoder-pet\dist\remielle\* $dst -Force
+```
+
+回到 Qoder 的桌面宠物设置点「刷新」。目录名必须是 `remielle`，且与 `pet.json` 里的 `id` 一致。
+
+## 使用
+
+- 安装后在桌面宠物列表选择「蕾米埃尔」即可；Qoder 会记住选择。
+- 宠物完全由 Qoder 驱动：切到其他应用、拖拽、把鼠标移到宠物上，都会触发对应原生动作。
+- 更新到新版本：直接重跑安装器「安装 / 更新」；内容相同时不会重复备份。
+- 恢复官方宠物：在 Qoder 桌面宠物设置中改选其他宠物；彻底移除则运行安装器卸载。
+
+更多排查与细节见 [INSTALL.md](INSTALL.md)。
 
 ## 工作原理
 
 ```
-Trae Hooks（五事件）
-   └→ hook-handler.js 落盘状态（hook-state.json）
-        └→ trae-pet-bridge 扩展内置状态服务器（127.0.0.1:27416，随扩展启停）
-             └→ floatingButton.html 注入的轮询脚本（500ms）
-                  └→ 按状态名切换 webp 动画
+Qoder（Petdex 运行时）
+   └→ 读取 %USERPROFILE%\.petdex\pets\remielle\pet.json
+        └→ 按 Qoder 状态选择 8×11 图集中的一行
+             └→ 按固定帧时序播放该行动画
 ```
 
-## Trae 升级后
+安装器只做两件事：把内嵌的 `pet.json` + `spritesheet.webp` 写入 Petdex 目录；卸载时在确认 `id` 后删除该目录。没有 Hook、扩展、端口或常驻进程。
 
-升级会还原 `main.js` 和官方素材 → 右键重跑 `deploy-native-pet.ps1`（或重跑安装器完整安装）即可，脚本幂等、自动刷新官方素材备份。
+Qoder 对宠物包的校验（本项目生成时逐项满足）：
+
+- `id` / 目录名匹配 `^[a-z0-9](?:[a-z0-9._-]{0,127})$`
+- `spriteVersionNumber` 为 2，图集为静态图
+- 宽高可被 8 与 11 整除，单元格宽高比 12:13
+- 只包含一个 `spritesheet.webp`（或 `.png`），不超过 32 MB
+
+## 与 Trae 版的区别
+
+| | Qoder 版（本分支） | Trae 版（`master`） |
+|---|---|---|
+| 接入方式 | Qoder 原生 Petdex 宠物包 | 补丁 Trae `main.js` / 悬浮窗页面 |
+| 状态来源 | Qoder 自身状态机（idle / running / waiting / review / failed） | Trae Hooks 五事件 + 扩展状态服务器 |
+| 六态语义 | 由 Qoder 状态映射，无法精确到「AI 提问 / 每次工具调用」 | 提问、编辑、通知、错误、悬停逐事件定制 |
+| 安装权限 | 当前用户，无需管理员 | 需写入 Trae 安装目录，会弹 UAC |
+| 维护成本 | Trae/Qoder 升级互不影响 | Trae 升级可能还原补丁，需要重跑安装器 |
+| 后台进程 | 无 | Hooks 运行时 + 桥接扩展 |
+
+如果 Qoder 后续开放更细粒度的宠物状态事件，可以在转换脚本中继续细化映射；当前优先保证原生、稳定、可逆。
+
+## 构建
+
+前置：Windows、Node.js、.NET Framework（系统自带 `csc.exe`）。
+
+```bash
+npm install
+npm run convert:qoder   # GIF → qoder-pet/dist/remielle（图集 + pet.json + 预览）
+npm run qoder:art       # 安装器预览图 + remielle.ico
+npm run qoder:build     # → release/Remielle-QoderPet-Setup-v1.0.0.exe
+```
+
+转换脚本会输出 `preview.png`（带行标签的图集预览）与 `meta.json`（每行的帧选取、缩放、位置），便于核对动作映射。修改素材后重跑上述三步即可。
+
+## 目录结构
+
+```
+qoder-pet/
+├── convert-qoder-pet.js          # GIF → Petdex v2 图集
+├── make-installer-art.js         # 安装器预览图与 ICO
+├── installer/
+│   ├── RemielleQoderInstaller.cs # WinForms 安装器（csc 编译）
+│   ├── app.manifest              # asInvoker / 系统 DPI
+│   └── build-qoder-installer.ps1
+├── preview.png                   # README 预览图
+└── dist/                         # 生成物（git 忽略）
+```
 
 ## 兼容性
 
-- Windows 10/11 + Trae CN 3.4.2+（v2.0.3 起 `main.js` 补丁锚点改用结构正则，不依赖混淆变量名，3.4.4 实测通过；Trae 大版本重构若再失配，安装日志会明确告警）
-- Trae v3.4+（CN / 国际版）；旧版 Trae 或想用 v1.x 独立 Electron 版 → 切到 [`old` 分支](../../tree/old)
-- 需要 Trae 自带 Node（Hooks 执行用，安装器自动探测）
-
-## 开发与构建
-
-```bash
-npm install                      # 安装 sharp（GIF → webp 转换用）
-.\installer\build-installer.ps1   # csc 编译单文件 EXE 安装器
-.\release.ps1                     # 打 release zip + EXE
-npm run convert                   # 主题 GIF → 动画 webp（改素材后重跑）
-```
+- 已在 **Qoder CN 0.4.8** 的 Petdex v2 格式上生成并校验宠物包；Qoder 若调整宠物校验规则或图集行数，需要重新适配。
+- Windows 10/11；安装器为系统 DPI 感知，150% 缩放下正常显示。
+- 宠物包同时兼容使用 `spritesheet.png` 的实现，但本项目输出无损 WebP 以控制体积。
 
 ## 分支说明
 
-- `master`：v2.0.3 当前版本（原生悬浮窗移植 + EXE 安装器；v2.0.1：自定义路径检测、无 node 时国内镜像自动下载、VSIX+CLI 扩展注册；v2.0.2：适配 Trae 3.5 新锚点 oB；v2.0.3：锚点全面改结构正则、适配 Trae 3.4.4 TB/PB/sn、失配告警）
-- `old`：v1.0–1.4 独立 Electron 宠物（旧版 Trae 与独立模式用户看这里）
+- `qoder`：Qoder 原生桌宠（当前分支）
+- `master`：Trae v2.0.3 原生悬浮窗版
+- `old`：v1.0–1.4 独立 Electron 宠物
 
 ## 致谢
 
